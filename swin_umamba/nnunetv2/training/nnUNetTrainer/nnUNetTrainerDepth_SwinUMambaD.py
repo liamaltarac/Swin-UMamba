@@ -1,6 +1,9 @@
 import os
 from os.path import join
 
+
+import numpy as np
+
 import torch
 from torch import device, nn
 from torch._C import device
@@ -15,10 +18,12 @@ from nnunetv2.utilities.plans_handling.plans_handler import ConfigurationManager
 from nnunetv2.nets.SwinUMambaD import get_swin_umamba_d_from_plans
 from nnunetv2.utilities.helpers import empty_cache, dummy_context
 
+from nnunetv2.training.loss.l2_loss import L2
+
+from nnunetv2.training.loss.deep_supervision import DeepSupervisionWrapper
 
 
-
-class nnUNetTrainerSwinUMambaD(nnUNetTrainer):
+class nnUNetTrainerDepth_SwinUMambaD(nnUNetTrainer):
 
     """ Swin-UMamba$\dagger$ with Mamba-based decoder"""
 
@@ -65,12 +70,66 @@ class nnUNetTrainerSwinUMambaD(nnUNetTrainer):
 
         return optimizer, scheduler
     
-    def on_epoch_end(self):
-        current_epoch = self.current_epoch
-        if (current_epoch + 1) % self.save_every == 0:
-            self.save_checkpoint(join(self.output_folder, f'checkpoint_{current_epoch}.pth'))
-        super().on_epoch_end()
+    def _build_loss(self):
 
+        loss = L2()
+            
+        # we give each output a weight which decreases exponentially (division by 2) as the resolution decreases
+        # this gives higher resolution outputs more weight in the loss
+
+        if self.enable_deep_supervision:
+            deep_supervision_scales = self._get_deep_supervision_scales()
+            weights = np.array([1 / (2**i) for i in range(len(deep_supervision_scales))])
+            weights[-1] = 0
+
+            # we don't use the lowest 2 outputs. Normalize weights so that they sum to 1
+            weights = weights / weights.sum()
+            # now wrap the loss
+            loss = DeepSupervisionWrapper(loss, weights)
+        return loss
+
+
+
+
+    def on_validation_epoch_end(self, val_outputs: List[dict]):
+        outputs_collated = collate_outputs(val_outputs)
+        
+        loss_here = np.mean(outputs_collated['loss'])
+
+        # self.logger.log('mean_fg_dice', mean_fg_dice, self.current_epoch)
+        # self.logger.log('dice_per_class_or_region', global_dc_per_class, self.current_epoch)
+        self.logger.log('val_losses', loss_here, self.current_epoch)
+
+    def on_epoch_end(self):
+        # Log the end time of the epoch
+        self.logger.log('epoch_end_timestamps', time(), self.current_epoch)
+
+        # Logging train and validation loss
+        self.print_to_log_file('train_loss', np.round(self.logger.my_fantastic_logging['train_losses'][-1], decimals=4))
+        self.print_to_log_file('val_loss', np.round(self.logger.my_fantastic_logging['val_losses'][-1], decimals=4))
+        
+        # Log the duration of the epoch
+        epoch_duration = self.logger.my_fantastic_logging['epoch_end_timestamps'][-1] - self.logger.my_fantastic_logging['epoch_start_timestamps'][-1]
+        self.print_to_log_file(f"Epoch time: {np.round(epoch_duration, decimals=2)} s")
+
+        # Checkpoint handling for best and periodic saves
+        current_epoch = self.current_epoch
+        if (current_epoch + 1) % self.save_every == 0 and current_epoch != (self.num_epochs - 1):
+            self.save_checkpoint(join(self.output_folder, 'checkpoint_latest.pth'))
+
+        best_metric = 'val_losses'  # Example metric, adjust based on actual usage
+        if self._best_ema is None or self.logger.my_fantastic_logging[best_metric][-1] < self._best_ema:
+            self._best_ema = self.logger.my_fantastic_logging[best_metric][-1]
+            self.print_to_log_file(f"Yayy! New best EMA MSE: {np.round(self._best_ema, decimals=4)}")
+            self.save_checkpoint(join(self.output_folder, 'checkpoint_best.pth'))
+
+        if self.local_rank == 0:
+            self.logger.plot_progress_png(self.output_folder)
+
+        # Increment the epoch counter
+        self.current_epoch += 1
+
+        
     def on_train_epoch_start(self):
         # freeze the encoder if the epoch is less than 10
         if self.current_epoch < self.freeze_encoder_epochs:
@@ -115,7 +174,7 @@ class nnUNetTrainerSwinUMambaD(nnUNetTrainer):
             torch.save(target, "target")
 
             del data
-            mse_loss = myMSE()
+            mse_loss = L2()
             l = mse_loss(output, target)
 
         return {'loss': l.detach().cpu().numpy(), 'tp_hard': 0, 'fp_hard': 0, 'fn_hard': 0}

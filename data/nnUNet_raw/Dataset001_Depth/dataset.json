@@ -1,0 +1,12 @@
+ {
+  "labels": {
+      "label_001": "1",
+      "background": 0
+  },
+  "channel_names": {
+      "0": "D"
+  },
+  "numTraining": 50,
+  "name": "processed_depth_dataset",
+  "file_ending": ".npy"
+}
