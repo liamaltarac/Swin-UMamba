@@ -23,8 +23,10 @@ def extract_fingerprint_dataset(dataset_id: int,
     """
     Returns the fingerprint as a dictionary (additionally to saving it)
     """
+
+    #print("Dataset ID", dataset_id)
+
     dataset_name = convert_id_to_dataset_name(dataset_id)
-    print(dataset_name)
 
     if check_dataset_integrity:
         verify_dataset_integrity(join(nnUNet_raw, dataset_name), num_processes)
@@ -40,6 +42,9 @@ def extract_fingerprints(dataset_ids: List[int], fingerprint_extractor_class_nam
     clean = False will not actually run this. This is just a switch for use with nnUNetv2_plan_and_preprocess where
     we don't want to rerun fingerprint extraction every time.
     """
+
+    print("RAW ! EXTRACTING FINGERPRINTS FOR DATASET", nnUNet_raw)
+
     fingerprint_extractor_class = recursive_find_python_class(join(nnunetv2.__path__[0], "experiment_planning"),
                                                               fingerprint_extractor_class_name,
                                                               current_module="nnunetv2.experiment_planning")

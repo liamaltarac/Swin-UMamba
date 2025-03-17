@@ -112,6 +112,7 @@ class DatasetFingerprintExtractor(object):
         properties_file = join(preprocessed_output_folder, 'dataset_fingerprint.json')
 
         if not isfile(properties_file) or overwrite_existing:
+            print("DATATSET KEYS", self.dataset.keys(), self.dataset)
             reader_writer_class = determine_reader_writer_from_dataset_json(self.dataset_json,
                                                                             # yikes. Rip the following line
                                                                             self.dataset[self.dataset.keys().__iter__().__next__()]['images'][0])

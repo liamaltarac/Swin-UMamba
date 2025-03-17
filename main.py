@@ -1,6 +1,16 @@
 import sys
 sys.path.append('swin_umamba/')
 import torch
+
+import os
+
+import glob
+
+os.environ['nnUNet_results'] = 'results/'  
+os.environ['nnUNet_raw'] = 'raw/'
+os.environ['nnUNet_preprocessed'] = 'preprocessed/'
+
+
 from swin_umamba.nnunetv2.run.run_training import run_training
 from swin_umamba.nnunetv2.experiment_planning.plan_and_preprocess_entrypoints import plan_and_preprocess_entry
 from swin_umamba.nnunetv2.experiment_planning.plan_and_preprocess_api import extract_fingerprints, plan_experiments, preprocess
@@ -9,10 +19,6 @@ from swin_umamba.nnunetv2.training.dataloading.utils import unpack_dataset
 
 from typing import Union, Optional
 
-
-import os
-
-import glob
 
 import shutil, json, glob, os
 from tqdm import tqdm 
@@ -58,10 +64,8 @@ if __name__ == '__main__':
     target_dir = 'data/gt/'
 
 
-    os.environ['nnUNet_results'] = 'results/'
-    os.environ['nnUNet_raw'] = 'raw/'
-    os.environ['nnUNet_preprocessed'] = 'preprocessed/'
 
+    print(os.environ)
     # example with 1 input modality
     list_datas = sorted(glob.glob(os.path.join(data_dir, '*.npy')))
     list_targets = sorted(glob.glob(os.path.join(target_dir, '*.npy')))
@@ -91,7 +95,7 @@ if __name__ == '__main__':
         curr_npy = np.load(data_path)
         filename = os.path.basename(data_path)
         if not filename.endswith('_0000.npy'):
-            filename = filename.replace('.py', '_0000.py')
+            filename = filename.replace('.npy', '_0000.npy')
 
         np.save(os.path.join(dataset_path, f'imagesTr/{filename}'), curr_npy)
         #curr_nifti.to_filename(os.path.join(dataset_path, f'imagesTr/{filename}'))
@@ -150,17 +154,21 @@ if __name__ == '__main__':
     if 'MPLBACKEND' in os.environ: 
         del os.environ['MPLBACKEND'] # avoid conflicts with matplotlib backend  
         
+    print("OSSSSS 0", os.environ['nnUNet_raw'])    
+    rrr = sorted(glob.glob(os.environ['nnUNet_raw']))
+    print("RAW !!", rrr)
 
+    
     extract_fingerprints([dataset_id])
     plan_experiments([dataset_id])
     preprocess([dataset_id])
-    run_unpacking([dataset_id], configuration='2d', fold=0)
+    run_unpacking(dataset_id, configuration='2d', fold=0)
 
-
+    print("DONE PART 1")
     extract_fingerprints([dataset_id+1])
     plan_experiments([dataset_id+1])
     preprocess([dataset_id+1])
-    run_unpacking([dataset_id+1], configuration='2d', fold=0)
+    run_unpacking(dataset_id+1, configuration='2d', fold=0)
 
     # Define 2nd modality raw data as gt_segmentations of 1st modality
     nnunet_datas_preprocessed_dir = os.path.join(os.environ['nnUNet_preprocessed'], f'Dataset{dataset_id+1:03d}_{dataset_target_name}') 
@@ -179,9 +187,9 @@ if __name__ == '__main__':
         shutil.copy(src = preprocessed_path, dst = gt_path) # we use shutil.copy to ensure safety, but switching to shutil.move would be more efficient
 
     #Define 2nd modality preprocessed files as ground truth of 1st modality
-    list_preprocessed_datas_seg_path = sorted(glob.glob(os.path.join(nnunet_targets_preprocessed_dir, 'nnUNetPlans_3d_fullres/*_seg.npy')))
+    list_preprocessed_datas_seg_path = sorted(glob.glob(os.path.join(nnunet_targets_preprocessed_dir, 'nnUNetPlans_2d/*_seg.npy')))
 
-    list_preprocessed_targets_path = sorted(glob.glob(os.path.join(nnunet_datas_preprocessed_dir, 'nnUNetPlans_3d_fullres/*.npy')))
+    list_preprocessed_targets_path = sorted(glob.glob(os.path.join(nnunet_datas_preprocessed_dir, 'nnUNetPlans_2d/*.npy')))
     list_preprocessed_targets_path = [name for name in list_preprocessed_targets_path if '_seg' not in name]
 
     for (datas_path, targets_path) in zip(list_preprocessed_datas_seg_path, list_preprocessed_targets_path):
@@ -192,5 +200,7 @@ if __name__ == '__main__':
     device = torch.device('cuda')
 
     run_training(dataset_id, "2D", 0, "nnUNetTrainerDepth_SwinUMambaD", device=device)
+
+
 
 #run_training("Dataset001_Depth",configuration= "2D", fold=0)

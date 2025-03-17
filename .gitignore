@@ -29,3 +29,6 @@ ENV
 *.npy
 *.jpg
 *.xml
+*.pkl
+*.npz
+swin
