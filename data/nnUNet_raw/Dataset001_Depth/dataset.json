@@ -6,7 +6,7 @@
   "channel_names": {
       "0": "D"
   },
-  "numTraining": 50,
-  "name": "processed_depth_dataset",
+  "numTraining": 228,
+  "name": "Dataset001_Depth",
   "file_ending": ".npy"
 }

@@ -22,9 +22,8 @@ yacs
 monai==1.3.0
 opencv-python
 torchinfo
-einops
 ninja
-timm 
-causal-conv1d
-mamba-ssm
 numba
+albumentations
+ruamel.yaml
+pyyaml
