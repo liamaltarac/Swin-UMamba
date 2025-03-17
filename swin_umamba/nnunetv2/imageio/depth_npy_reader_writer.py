@@ -54,7 +54,7 @@ class DepthNpy2dIO(BaseReaderWriter):
         io.imsave(output_fname+".png", seg[0].astype(np.uint8), check_contrast=False)
 
 
-if __name__ == '__main__':
+'''if __name__ == '__main__':
     from matplotlib import pyplot as plt
     images = ('\Swin-UMamba\data\nnUNet_raw\processed_depth_dataset\imagesTr\CashBox_0_0000.npy',)
     segmentation = '\Swin-UMamba\data\nnUNet_raw\processed_depth_dataset\labelsTr\CashBox_0_0000.npy'
@@ -62,4 +62,4 @@ if __name__ == '__main__':
     img, props = imgio.read_images(images)
     seg, segprops = imgio.read_seg(segmentation)    
     plt.imshow(img)
-    plt.show()
+    plt.show()'''

@@ -39,4 +39,4 @@ pip install transformations
 pip install xformers==0.0.28.post1  --no-build-isolation 
 
 
-python main.py Dataset001_Depth 2D 0 -tr nnUNetTrainerDepth_SwinUMambaD
+python main.py 
