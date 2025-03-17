@@ -63,8 +63,8 @@ if __name__ == '__main__':
     os.environ['nnUNet_preprocessed'] = 'preprocessed/'
 
     # example with 1 input modality
-    list_datas = sorted(glob.glob(os.path.join(data_dir, '*.nii.gz')))
-    list_targets = sorted(glob.glob(os.path.join(target_dir, '*.nii.gz')))
+    list_datas = sorted(glob.glob(os.path.join(data_dir, '*.npy')))
+    list_targets = sorted(glob.glob(os.path.join(target_dir, '*.npy')))
 
     print(len(list_datas), list_datas)
     print(len(list_targets), list_targets)
@@ -87,7 +87,7 @@ if __name__ == '__main__':
     os.makedirs(os.path.join(dataset_target_path, 'labelsTr'), exist_ok = True)
 
 
-    def process_file(data_path, dataset_path, mat):
+    def process_file(data_path, dataset_path):
         curr_npy = np.load(data_path)
         filename = os.path.basename(data_path)
         if not filename.endswith('_0000.npy'):
