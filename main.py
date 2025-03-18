@@ -11,6 +11,7 @@ os.environ['nnUNet_raw'] = 'raw/'
 os.environ['nnUNet_preprocessed'] = 'preprocessed/'
 
 
+
 from swin_umamba.nnunetv2.run.run_training import run_training
 from swin_umamba.nnunetv2.experiment_planning.plan_and_preprocess_entrypoints import plan_and_preprocess_entry
 from swin_umamba.nnunetv2.experiment_planning.plan_and_preprocess_api import extract_fingerprints, plan_experiments, preprocess
@@ -197,7 +198,15 @@ if __name__ == '__main__':
         shutil.copy(src = targets_path, dst = datas_path) '''
 
 
+    # multithreading in torch doesn't help nnU-Net if run on GPU
+    os.environ['TORCHINDUCTOR_COMPILE_THREADS'] = '1'
+
+
+    print("GPU !!!!!!!")
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
     device = torch.device('cuda')
+    
 
     run_training(50, "2d", 0, "nnUNetTrainerDepth_SwinUMambaD", device=device)
 

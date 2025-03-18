@@ -4,8 +4,8 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus-per-node=1
 #SBATCH --cpus-per-gpu=1  # 6*4: There are 24 CPU cores on P100 Cedar GPU nodes
-#SBATCH --mem=24G         # Request the full memory of the node
-#SBATCH --time=02:00:00
+#SBATCH --mem=16G         # Request the full memory of the node
+#SBATCH --time=01:00:00
 #SBATCH --wait-all-nodes=1
 #SBATCH --output=%N-%j.out
 #SBATCH --mail-user=liam.frija-altarac.1@ens.etsmtl.ca
