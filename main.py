@@ -61,7 +61,7 @@ def run_unpacking(dataset_name_or_id: Union[str, int],
 if __name__ == '__main__':
 
 
-    '''data_dir = 'data/imgs/'
+    data_dir = 'data/imgs/'
     target_dir = 'data/gt/'
 
 
@@ -195,14 +195,10 @@ if __name__ == '__main__':
 
     for (datas_path, targets_path) in zip(list_preprocessed_datas_seg_path, list_preprocessed_targets_path):
         print(targets_path, "->", datas_path)
-        shutil.copy(src = targets_path, dst = datas_path) '''
+        shutil.copy(src = targets_path, dst = datas_path) 
 
 
-    # multithreading in torch doesn't help nnU-Net if run on GPU
-    os.environ['TORCHINDUCTOR_COMPILE_THREADS'] = '1'
 
-
-    print("GPU !!!!!!!")
     torch.set_num_threads(1)
     torch.set_num_interop_threads(1)
     device = torch.device('cuda')
