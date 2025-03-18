@@ -345,8 +345,8 @@ class ExperimentPlanner(object):
         plan = {
             'data_identifier': data_identifier,
             'preprocessor_name': self.preprocessor_name,
-            'batch_size': 8,
-            'patch_size': patch_size,
+            'batch_size': 4,
+            'patch_size': [902, 1234],
             'median_image_size_in_voxels': median_shape,
             'spacing': spacing,
             'normalization_schemes': normalization_schemes,

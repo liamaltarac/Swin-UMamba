@@ -66,7 +66,7 @@ class nnUNetTrainerDepth_SwinUMambaD(nnUNetTrainer):
 
         print(model)
         print(configuration_manager.patch_size)
-        summary(model, input_size=[1, num_input_channels] + configuration_manager.patch_size)
+        #summary(model, input_size=[1, num_input_channels] + configuration_manager.patch_size)
 
         return model
     

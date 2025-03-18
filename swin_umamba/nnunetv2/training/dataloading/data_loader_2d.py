@@ -42,9 +42,11 @@ class nnUNetDataLoader2D(nnUNetDataLoaderBase):
                 selected_slice = np.random.choice(properties['class_locations'][selected_class_or_region][:, 1])
             else:
                 selected_slice = np.random.choice(len(data[0]))
+            print("DATA SHAPE AAAAAAAAA:", data.shape)
 
             data = data[:, selected_slice]
             seg = seg[:, selected_slice]
+            print("DATA SHAPE BBBBBBBBBB:", data.shape)
 
             # the line of death lol
             # this needs to be a separate variable because we could otherwise permanently overwrite
@@ -58,6 +60,7 @@ class nnUNetDataLoader2D(nnUNetDataLoaderBase):
             } if (selected_class_or_region is not None) else None
 
             # print(properties)
+            print("DATA SHAPE :", data.shape)
             shape = data.shape[1:]
             dim = len(shape)
             bbox_lbs, bbox_ubs = self.get_bbox(shape, force_fg if selected_class_or_region is not None else None,
@@ -82,7 +85,7 @@ class nnUNetDataLoader2D(nnUNetDataLoaderBase):
 
             padding = [(-min(0, bbox_lbs[i]), max(bbox_ubs[i] - shape[i], 0)) for i in range(dim)]
             data_all[j] = np.pad(data, ((0, 0), *padding), 'constant', constant_values=0)
-            seg_all[j] = np.pad(seg, ((0, 0), *padding), 'constant', constant_values=-1)
+            seg_all[j] = np.pad(seg, ((0, 0), *padding), 'constant', constant_values=0)
 
         return {'data': data_all, 'seg': seg_all, 'properties': case_properties, 'keys': selected_keys}
 

@@ -5,7 +5,7 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --cpus-per-gpu=1  # 6*4: There are 24 CPU cores on P100 Cedar GPU nodes
 #SBATCH --mem=24G         # Request the full memory of the node
-#SBATCH --time=45:00:00
+#SBATCH --time=02:00:00
 #SBATCH --wait-all-nodes=1
 #SBATCH --output=%N-%j.out
 #SBATCH --mail-user=liam.frija-altarac.1@ens.etsmtl.ca
@@ -24,11 +24,9 @@ source $SLURM_TMPDIR/env/bin/activate
 
 # Upgrade pip and install required packages
 pip install --no-index --upgrade pip
-pip install --no-index torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 pip install  --no-index  -r requirements.txt
-pip install --no-index omegaconf scipy trimesh imageio joblib pandas timm einops 
-pip install causal_conv1d==1.1.1
-pip install mamba-ssm==1.2.0.post1
+pip install --no-index omegaconf scipy trimesh imageio joblib pandas timm einops  causal_conv1d mamba-ssm
 
 pip install transformations
 
