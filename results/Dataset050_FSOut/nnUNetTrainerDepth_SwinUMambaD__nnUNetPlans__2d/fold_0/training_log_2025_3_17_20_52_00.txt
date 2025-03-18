@@ -1,0 +1,93 @@
+
+#######################################################################
+Please cite the following paper when using nnU-Net:
+Isensee, F., Jaeger, P. F., Kohl, S. A., Petersen, J., & Maier-Hein, K. H. (2021). nnU-Net: a self-configuring method for deep learning-based biomedical image segmentation. Nature methods, 18(2), 203-211.
+#######################################################################
+ 
+2025-03-17 20:52:01.199721: Using optimizer AdamW (
+Parameter Group 0
+    amsgrad: False
+    betas: (0.9, 0.999)
+    capturable: False
+    differentiable: False
+    eps: 1e-05
+    foreach: None
+    fused: None
+    initial_lr: 0.0001
+    lr: 0.0001
+    maximize: False
+    weight_decay: 0.05
+) 
+2025-03-17 20:52:01.199845: Using scheduler <torch.optim.lr_scheduler.CosineAnnealingLR object at 0x7fcdd6650f50> 
+
+This is the configuration used by this training:
+Configuration name: 2d
+ {'data_identifier': 'nnUNetPlans_2d', 'preprocessor_name': 'DefaultPreprocessor', 'batch_size': 1, 'patch_size': [448, 576], 'median_image_size_in_voxels': [3008.0, 4112.0], 'spacing': [1.0, 1.0], 'normalization_schemes': ['NoNormalization'], 'use_mask_for_norm': [False], 'UNet_class_name': 'PlainConvUNet', 'UNet_base_num_features': 32, 'n_conv_per_stage_encoder': [2, 2, 2, 2, 2, 2, 2], 'n_conv_per_stage_decoder': [2, 2, 2, 2, 2, 2], 'num_pool_per_axis': [6, 6], 'pool_op_kernel_sizes': [[1, 1], [2, 2], [2, 2], [2, 2], [2, 2], [2, 2], [2, 2]], 'conv_kernel_sizes': [[3, 3], [3, 3], [3, 3], [3, 3], [3, 3], [3, 3], [3, 3]], 'unet_max_num_features': 512, 'resampling_fn_data': 'resample_data_or_seg_to_shape', 'resampling_fn_seg': 'resample_data_or_seg_to_shape', 'resampling_fn_data_kwargs': {'is_seg': False, 'order': 3, 'order_z': 0, 'force_separate_z': None}, 'resampling_fn_seg_kwargs': {'is_seg': True, 'order': 1, 'order_z': 0, 'force_separate_z': None}, 'resampling_fn_probabilities': 'resample_data_or_seg_to_shape', 'resampling_fn_probabilities_kwargs': {'is_seg': False, 'order': 1, 'order_z': 0, 'force_separate_z': None}, 'batch_dice': True} 
+ 
+These are the global plan.json settings:
+ {'dataset_name': 'Dataset050_FSOut', 'plans_name': 'nnUNetPlans', 'original_median_spacing_after_transp': [999.0, 1.0, 1.0], 'original_median_shape_after_transp': [1, 3008, 4112], 'image_reader_writer': 'DepthNpy2dIO', 'transpose_forward': [0, 1, 2], 'transpose_backward': [0, 1, 2], 'experiment_planner_used': 'ExperimentPlanner', 'label_manager': 'LabelManager', 'foreground_intensity_properties_per_channel': {'0': {'max': 807.0, 'mean': 362.87115478515625, 'median': 390.0, 'min': 1.7373046875, 'percentile_00_5': 21.6875, 'percentile_99_5': 709.5, 'std': 156.19692993164062}}} 
+ 
+2025-03-17 20:52:01.202249: unpacking dataset... 
+2025-03-17 20:52:04.731397: unpacking done... 
+2025-03-17 20:52:04.731765: do_dummy_2d_data_aug: False 
+2025-03-17 20:52:04.732049: Using splits from existing split file: preprocessed/Dataset050_FSOut/splits_final.json 
+2025-03-17 20:52:04.732177: The split file contains 5 splits. 
+2025-03-17 20:52:04.732226: Desired fold for training: 0 
+2025-03-17 20:52:04.732269: This split has 9 training and 3 validation cases. 
+2025-03-17 20:52:04.738654: Unable to plot network architecture: 
+2025-03-17 20:52:04.738736: No module named 'hiddenlayer' 
+2025-03-17 20:52:04.741312: Freezing the encoder 
+2025-03-17 20:52:04.742960:  
+2025-03-17 20:52:04.743025: Epoch 0 
+2025-03-17 20:52:04.743159: Current learning rate: 0.0001 
+2025-03-17 20:53:05.016849: train_loss 124112.62 
+2025-03-17 20:53:05.017051: val_loss 159673.95 
+2025-03-17 20:53:05.017151: Epoch time: 60.28 s 
+2025-03-17 20:53:05.017223: Yayy! New best EMA MSE: 159673.953125 
+2025-03-17 20:53:06.116616: Freezing the encoder 
+2025-03-17 20:53:06.117840:  
+2025-03-17 20:53:06.117905: Epoch 1 
+2025-03-17 20:53:06.118010: Current learning rate: 0.0001 
+2025-03-17 20:54:04.692123: train_loss 88260.59 
+2025-03-17 20:54:04.692343: val_loss 115647.45 
+2025-03-17 20:54:04.692464: Epoch time: 58.58 s 
+2025-03-17 20:54:04.692556: Yayy! New best EMA MSE: 115647.453125 
+2025-03-17 20:54:05.624523: Freezing the encoder 
+2025-03-17 20:54:05.625787:  
+2025-03-17 20:54:05.625869: Epoch 2 
+2025-03-17 20:54:05.625973: Current learning rate: 0.0001 
+2025-03-17 20:55:04.191813: train_loss 87303.945 
+2025-03-17 20:55:04.191981: val_loss 117860.13 
+2025-03-17 20:55:04.192067: Epoch time: 58.57 s 
+2025-03-17 20:55:04.893666: Freezing the encoder 
+2025-03-17 20:55:04.894920:  
+2025-03-17 20:55:04.895030: Epoch 3 
+2025-03-17 20:55:04.895164: Current learning rate: 0.0001 
+2025-03-17 20:56:03.533293: train_loss 89067.555 
+2025-03-17 20:56:03.533454: val_loss 123424.84 
+2025-03-17 20:56:03.533548: Epoch time: 58.64 s 
+2025-03-17 20:56:04.228487: Freezing the encoder 
+2025-03-17 20:56:04.229707:  
+2025-03-17 20:56:04.229774: Epoch 4 
+2025-03-17 20:56:04.229879: Current learning rate: 0.0001 
+2025-03-17 20:57:03.085962: train_loss 84975.49 
+2025-03-17 20:57:03.086144: val_loss 137318.1 
+2025-03-17 20:57:03.086230: Epoch time: 58.86 s 
+2025-03-17 20:57:03.776469: Freezing the encoder 
+2025-03-17 20:57:03.777601:  
+2025-03-17 20:57:03.777658: Epoch 5 
+2025-03-17 20:57:03.777741: Current learning rate: 0.0001 
+2025-03-17 20:58:03.033380: train_loss 83782.33 
+2025-03-17 20:58:03.033561: val_loss 153137.5 
+2025-03-17 20:58:03.033663: Epoch time: 59.26 s 
+2025-03-17 20:58:03.730914: Freezing the encoder 
+2025-03-17 20:58:03.732113:  
+2025-03-17 20:58:03.732181: Epoch 6 
+2025-03-17 20:58:03.732290: Current learning rate: 0.0001 
+2025-03-17 20:59:02.817087: train_loss 81269.664 
+2025-03-17 20:59:02.817262: val_loss 140095.66 
+2025-03-17 20:59:02.817350: Epoch time: 59.09 s 
+2025-03-17 20:59:03.510905: Freezing the encoder 
+2025-03-17 20:59:03.512101:  
+2025-03-17 20:59:03.512182: Epoch 7 
+2025-03-17 20:59:03.512289: Current learning rate: 0.0001 

@@ -4,7 +4,7 @@
       "background": 0
   },
   "channel_names": {
-      "0": "D"
+      "0": "noNorm"
   },
   "numTraining": 228,
   "name": "Dataset001_Depth",

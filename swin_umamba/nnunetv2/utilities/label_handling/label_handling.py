@@ -228,10 +228,11 @@ class LabelManager(object):
 
     @property
     def num_segmentation_heads(self):
-        if self.has_regions:
+        '''if self.has_regions:
             return len(self.foreground_regions)
         else:
-            return len(self.all_labels)
+            return len(self.all_labels)'''
+        return 1  # we only have one class (just the resconstructed depthmap)
 
 
 def get_labelmanager_class_from_plans(plans: dict) -> Type[LabelManager]:

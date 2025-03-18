@@ -653,7 +653,7 @@ class SwinUMambaD(nn.Module):
 def load_pretrained_ckpt(
     model, 
     num_input_channels=1,
-    ckpt_path = ".weights\\vssmtiny_dp01_ckpt_epoch_292.pth" 
+    ckpt_path = "weights/vssmtiny_dp01_ckpt_epoch_292.pth" 
 ):
     
     print(f"Loading weights from: {ckpt_path}")

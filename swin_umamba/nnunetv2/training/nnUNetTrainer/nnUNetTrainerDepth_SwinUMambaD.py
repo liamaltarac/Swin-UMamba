@@ -23,7 +23,6 @@ from nnunetv2.training.nnUNetTrainer.nnUNetTrainer import nnUNetTrainer
 from nnunetv2.utilities.plans_handling.plans_handler import ConfigurationManager, PlansManager
 from nnunetv2.nets.SwinUMambaD import get_swin_umamba_d_from_plans
 from nnunetv2.utilities.helpers import empty_cache, dummy_context
-from nnunetv2.nets.SwinUMambaD import get_swin_umamba_d_from_plans
 from nnunetv2.utilities.collate_outputs import collate_outputs
 
 
@@ -63,6 +62,9 @@ class nnUNetTrainerDepth_SwinUMambaD(nnUNetTrainer):
             deep_supervision=enable_deep_supervision, 
             use_pretrain=True
         )
+
+        print(model)
+        print(configuration_manager.patch_size)
         summary(model, input_size=[1, num_input_channels] + configuration_manager.patch_size)
 
         return model
@@ -110,6 +112,7 @@ class nnUNetTrainerDepth_SwinUMambaD(nnUNetTrainer):
 
         # self.logger.log('mean_fg_dice', mean_fg_dice, self.current_epoch)
         # self.logger.log('dice_per_class_or_region', global_dc_per_class, self.current_epoch)
+        print("LOSS HERE", loss_here)
         self.logger.log('val_losses', loss_here, self.current_epoch)
 
     def on_epoch_end(self):
@@ -171,19 +174,29 @@ class nnUNetTrainerDepth_SwinUMambaD(nnUNetTrainer):
 
     def validation_step(self, batch: dict) -> dict:
         data = batch['data']
-        target = batch['target']
+        target = batch['target'][0]
+        print("TARGET SHAPE", target.shape)
 
+        print(target)
         data = data.to(self.device, non_blocking=True)
-        if isinstance(target, list):
+        target = target.to(self.device, non_blocking=True)
+
+        #arget = torch.stack(target, dim=0).to(self.device, non_blocking=True)
+        #print(target.shape, data.shape)
+
+
+        '''if isinstance(target, list):
             target = [i.to(self.device, non_blocking=True) for i in target]
+            target = torch.stack(target, 0)
+
         else:
-            target = target.to(self.device, non_blocking=True)
+            target = target.to(self.device, non_blocking=True)'''
 
         with autocast(self.device.type, enabled=True) if self.device.type == 'cuda' else dummy_context():
-            output = self.network(data)
-            torch.save(data, "data")
+            output = self.network(data)[0]
+            '''torch.save(data, "data")
             torch.save(output, "output")
-            torch.save(target, "target")
+            torch.save(target, "target")'''
 
             del data
             mse_loss = L2()

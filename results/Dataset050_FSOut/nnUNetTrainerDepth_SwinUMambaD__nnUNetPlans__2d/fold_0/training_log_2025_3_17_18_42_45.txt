@@ -1,0 +1,60 @@
+
+#######################################################################
+Please cite the following paper when using nnU-Net:
+Isensee, F., Jaeger, P. F., Kohl, S. A., Petersen, J., & Maier-Hein, K. H. (2021). nnU-Net: a self-configuring method for deep learning-based biomedical image segmentation. Nature methods, 18(2), 203-211.
+#######################################################################
+ 
+2025-03-17 18:42:46.475755: Using optimizer AdamW (
+Parameter Group 0
+    amsgrad: False
+    betas: (0.9, 0.999)
+    capturable: False
+    differentiable: False
+    eps: 1e-05
+    foreach: None
+    fused: None
+    initial_lr: 0.0001
+    lr: 0.0001
+    maximize: False
+    weight_decay: 0.05
+) 
+2025-03-17 18:42:46.475884: Using scheduler <torch.optim.lr_scheduler.CosineAnnealingLR object at 0x7fef03d83da0> 
+
+This is the configuration used by this training:
+Configuration name: 2d
+ {'data_identifier': 'nnUNetPlans_2d', 'preprocessor_name': 'DefaultPreprocessor', 'batch_size': 1, 'patch_size': [448, 576], 'median_image_size_in_voxels': [3008.0, 4112.0], 'spacing': [1.0, 1.0], 'normalization_schemes': ['ZScoreNormalization'], 'use_mask_for_norm': [False], 'UNet_class_name': 'PlainConvUNet', 'UNet_base_num_features': 32, 'n_conv_per_stage_encoder': [2, 2, 2, 2, 2, 2, 2], 'n_conv_per_stage_decoder': [2, 2, 2, 2, 2, 2], 'num_pool_per_axis': [6, 6], 'pool_op_kernel_sizes': [[1, 1], [2, 2], [2, 2], [2, 2], [2, 2], [2, 2], [2, 2]], 'conv_kernel_sizes': [[3, 3], [3, 3], [3, 3], [3, 3], [3, 3], [3, 3], [3, 3]], 'unet_max_num_features': 512, 'resampling_fn_data': 'resample_data_or_seg_to_shape', 'resampling_fn_seg': 'resample_data_or_seg_to_shape', 'resampling_fn_data_kwargs': {'is_seg': False, 'order': 3, 'order_z': 0, 'force_separate_z': None}, 'resampling_fn_seg_kwargs': {'is_seg': True, 'order': 1, 'order_z': 0, 'force_separate_z': None}, 'resampling_fn_probabilities': 'resample_data_or_seg_to_shape', 'resampling_fn_probabilities_kwargs': {'is_seg': False, 'order': 1, 'order_z': 0, 'force_separate_z': None}, 'batch_dice': True} 
+ 
+These are the global plan.json settings:
+ {'dataset_name': 'Dataset050_FSOut', 'plans_name': 'nnUNetPlans', 'original_median_spacing_after_transp': [999.0, 1.0, 1.0], 'original_median_shape_after_transp': [1, 3008, 4112], 'image_reader_writer': 'DepthNpy2dIO', 'transpose_forward': [0, 1, 2], 'transpose_backward': [0, 1, 2], 'experiment_planner_used': 'ExperimentPlanner', 'label_manager': 'LabelManager', 'foreground_intensity_properties_per_channel': {'0': {'max': 807.0, 'mean': 362.87115478515625, 'median': 390.0, 'min': 1.7373046875, 'percentile_00_5': 21.6875, 'percentile_99_5': 709.5, 'std': 156.19692993164062}}} 
+ 
+2025-03-17 18:42:46.478333: unpacking dataset... 
+2025-03-17 18:42:50.196351: unpacking done... 
+2025-03-17 18:42:50.196683: do_dummy_2d_data_aug: False 
+2025-03-17 18:42:50.196985: Using splits from existing split file: preprocessed/Dataset050_FSOut/splits_final.json 
+2025-03-17 18:42:50.197112: The split file contains 5 splits. 
+2025-03-17 18:42:50.197160: Desired fold for training: 0 
+2025-03-17 18:42:50.197206: This split has 9 training and 3 validation cases. 
+2025-03-17 18:42:50.203020: Unable to plot network architecture: 
+2025-03-17 18:42:50.203093: No module named 'hiddenlayer' 
+2025-03-17 18:42:50.205503: Freezing the encoder 
+2025-03-17 18:42:50.207108:  
+2025-03-17 18:42:50.207170: Epoch 0 
+2025-03-17 18:42:50.207263: Current learning rate: 0.0001 
+2025-03-17 18:43:46.260148: train_loss nan 
+2025-03-17 18:43:46.260346: Epoch time: 56.05 s 
+2025-03-17 18:43:47.174160: Freezing the encoder 
+2025-03-17 18:43:47.175439:  
+2025-03-17 18:43:47.175501: Epoch 1 
+2025-03-17 18:43:47.175614: Current learning rate: 0.0001 
+2025-03-17 18:44:42.286510: train_loss nan 
+2025-03-17 18:44:42.286706: Epoch time: 55.11 s 
+2025-03-17 18:44:42.974879: Freezing the encoder 
+2025-03-17 18:44:42.976161:  
+2025-03-17 18:44:42.976233: Epoch 2 
+2025-03-17 18:44:42.976351: Current learning rate: 0.0001 
+2025-03-17 18:45:37.874457: train_loss nan 
+2025-03-17 18:45:37.874660: Epoch time: 54.9 s 
+2025-03-17 18:45:38.572914: Freezing the encoder 
+2025-03-17 18:45:38.574118:  
+2025-03-17 18:45:38.574188: Epoch 3 
+2025-03-17 18:45:38.574283: Current learning rate: 0.0001 

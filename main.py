@@ -60,7 +60,7 @@ def run_unpacking(dataset_name_or_id: Union[str, int],
 if __name__ == '__main__':
 
 
-    data_dir = 'data/imgs/'
+    '''data_dir = 'data/imgs/'
     target_dir = 'data/gt/'
 
 
@@ -126,7 +126,7 @@ if __name__ == '__main__':
             "background": 0
         },
         "channel_names": {
-            "0": "D",
+            "0": "noNorm",
         },
         "numTraining": len(list_datas),
         "file_ending": ".npy"
@@ -141,7 +141,7 @@ if __name__ == '__main__':
             "background": 0
         },
         "channel_names": {
-            "0": "G",
+            "0": "noNorm",
         },
         "numTraining": len(list_targets),
         "file_ending": ".npy"
@@ -194,12 +194,12 @@ if __name__ == '__main__':
 
     for (datas_path, targets_path) in zip(list_preprocessed_datas_seg_path, list_preprocessed_targets_path):
         print(targets_path, "->", datas_path)
-        shutil.copy(src = targets_path, dst = datas_path) 
+        shutil.copy(src = targets_path, dst = datas_path) '''
 
 
     device = torch.device('cuda')
 
-    run_training(dataset_id, "2D", 0, "nnUNetTrainerDepth_SwinUMambaD", device=device)
+    run_training(50, "2d", 0, "nnUNetTrainerDepth_SwinUMambaD", device=device)
 
 
 
