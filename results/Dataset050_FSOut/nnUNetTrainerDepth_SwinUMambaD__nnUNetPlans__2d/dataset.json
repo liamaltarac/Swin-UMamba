@@ -1,0 +1,11 @@
+{
+    "labels": {
+        "label_001": "1",
+        "background": 0
+    },
+    "channel_names": {
+        "0": "noNorm"
+    },
+    "numTraining": 12,
+    "file_ending": ".npy"
+}
