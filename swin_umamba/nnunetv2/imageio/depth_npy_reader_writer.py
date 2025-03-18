@@ -34,6 +34,7 @@ class DepthNpy2dIO(BaseReaderWriter):
         images = []
         for f in image_fnames:
             npy_img = np.load(f)
+            #npy_img = np.expand_dims(npy_img, axis=0)
 
             if npy_img.ndim == 3:
                 # rgb image, last dimension should be the color channel and the size of that channel should be 3
@@ -61,7 +62,7 @@ class DepthNpy2dIO(BaseReaderWriter):
         return self.read_images((seg_fname, ))
 
     def write_seg(self, seg: np.ndarray, output_fname: str, properties: dict) -> None:
-        io.imsave(output_fname, seg[0].astype(np.uint8), check_contrast=False)
+        np.save(output_fname, seg[0].astype(np.float32))
 
 
 '''if __name__ == '__main__':
