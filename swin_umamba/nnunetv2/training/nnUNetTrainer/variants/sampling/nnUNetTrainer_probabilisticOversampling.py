@@ -2,7 +2,7 @@ from typing import Tuple
 
 import torch
 
-from nnunetv2.training.dataloading.data_loader_2d import nnUNetDataLoader2D
+from swin_umamba.nnunetv2.training.dataloading.data_loader import nnUNetDataLoader2D
 from nnunetv2.training.dataloading.data_loader_3d import nnUNetDataLoader3D
 from nnunetv2.training.nnUNetTrainer.nnUNetTrainer import nnUNetTrainer
 import numpy as np

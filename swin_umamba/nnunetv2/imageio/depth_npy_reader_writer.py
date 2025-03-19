@@ -48,7 +48,7 @@ class DepthNpy2dIO(BaseReaderWriter):
                 # grayscale image
                 images.append(npy_img[None, None])
 
-        print("IMG SHAPE :", images[0].shape)
+        #print("IMG SHAPE :", images[0].shape)
         if not self._check_all_same([i.shape for i in images]):
             print('ERROR! Not all input images have the same shape!')
             print('Shapes:')

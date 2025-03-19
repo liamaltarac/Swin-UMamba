@@ -122,6 +122,8 @@ class PatchMerging2D(nn.Module):
     def forward(self, x):
         B, H, W, C = x.shape
 
+        print("PATCH SHAPE : ", x.shape)
+
         SHAPE_FIX = [-1, -1]
         if (W % 2 != 0) or (H % 2 != 0):
             print(f"Warning, x.shape {x.shape} is not match even ===========", flush=True)

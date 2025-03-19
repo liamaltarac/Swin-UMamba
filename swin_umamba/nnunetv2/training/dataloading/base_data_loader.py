@@ -58,6 +58,7 @@ class nnUNetDataLoaderBase(DataLoader):
         num_color_channels = data.shape[0]
 
         data_shape = (self.batch_size, num_color_channels, *self.patch_size)
+        print("DATA SHAPE ", data_shape, seg.shape)
         seg_shape = (self.batch_size, seg.shape[0], *self.patch_size)
         return data_shape, seg_shape
 

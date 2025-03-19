@@ -427,8 +427,8 @@ class nnUNetPredictor(object):
         if self.verbose:
             print('predicting')
         predicted_logits = self.predict_logits_from_preprocessed_data(dct['data']).cpu()
-
-        if self.verbose:
+        return predicted_logits[0], dct['data']
+        '''if self.verbose:
             print('resampling to original shape')
         if output_file_truncated is not None:
             export_prediction_from_logits(predicted_logits, dct['data_properties'], self.configuration_manager,
@@ -444,7 +444,7 @@ class nnUNetPredictor(object):
             if save_or_return_probabilities:
                 return ret[0], ret[1]
             else:
-                return ret
+                return ret'''
 
     def predict_logits_from_preprocessed_data(self, data: torch.Tensor) -> torch.Tensor:
         """

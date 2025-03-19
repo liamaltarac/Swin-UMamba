@@ -28,8 +28,8 @@
             "preprocessor_name": "DefaultPreprocessor",
             "batch_size": 1,
             "patch_size": [
-                902,
-                1234
+                448,
+                576
             ],
             "median_image_size_in_voxels": [
                 902.0,
@@ -40,7 +40,7 @@
                 1.0
             ],
             "normalization_schemes": [
-                "NoNormalization"
+                "RescaleTo01Normalization"
             ],
             "use_mask_for_norm": [
                 false

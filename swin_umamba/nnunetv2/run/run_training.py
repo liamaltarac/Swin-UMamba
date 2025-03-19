@@ -63,7 +63,7 @@ def get_trainer_from_args(dataset_name_or_id: Union[int, str],
     plans = load_json(plans_file)
     dataset_json = load_json(join(preprocessed_dataset_folder_base, 'dataset.json'))
     nnunet_trainer = nnunet_trainer(plans=plans, configuration=configuration, fold=fold,
-                                    dataset_json=dataset_json, unpack_dataset=not use_compressed, device=device)
+                                    dataset_json=dataset_json, device=device)
     return nnunet_trainer
 
 

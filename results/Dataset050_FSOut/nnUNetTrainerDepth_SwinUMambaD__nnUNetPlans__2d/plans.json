@@ -28,8 +28,8 @@
             "preprocessor_name": "DefaultPreprocessor",
             "batch_size": 1,
             "patch_size": [
-                902,
-                1234
+                448,
+                576
             ],
             "median_image_size_in_voxels": [
                 902.0,
@@ -40,7 +40,7 @@
                 1.0
             ],
             "normalization_schemes": [
-                "NoNormalization"
+                "RescaleTo01Normalization"
             ],
             "use_mask_for_norm": [
                 false
@@ -161,7 +161,7 @@
             "mean": 402.6347961425781,
             "median": 394.5,
             "min": -0.161404088139534,
-            "percentile_00_5": 26.20287929534912,
+            "percentile_00_5": 26.202880859375,
             "percentile_99_5": 842.0833129882812,
             "std": 135.82870483398438
         }

@@ -7,20 +7,41 @@ import warnings
 from copy import deepcopy
 from datetime import datetime
 from time import time, sleep
-from typing import Union, Tuple, List
+from typing import Tuple, Union, List
 
 import numpy as np
 import torch
+from batchgenerators.dataloading.multi_threaded_augmenter import MultiThreadedAugmenter
+from batchgenerators.dataloading.nondet_multi_threaded_augmenter import NonDetMultiThreadedAugmenter
 from batchgenerators.dataloading.single_threaded_augmenter import SingleThreadedAugmenter
-from batchgenerators.transforms.abstract_transforms import AbstractTransform, Compose
-from batchgenerators.transforms.color_transforms import BrightnessMultiplicativeTransform, \
-    ContrastAugmentationTransform, GammaTransform
-from batchgenerators.transforms.noise_transforms import GaussianNoiseTransform, GaussianBlurTransform
-from batchgenerators.transforms.resample_transforms import SimulateLowResolutionTransform
-from batchgenerators.transforms.spatial_transforms import SpatialTransform, MirrorTransform
-from batchgenerators.transforms.utility_transforms import RemoveLabelTransform, RenameTransform, NumpyToTensor
 from batchgenerators.utilities.file_and_folder_operations import join, load_json, isfile, save_json, maybe_mkdir_p
+from batchgeneratorsv2.helpers.scalar_type import RandomScalar
+from batchgeneratorsv2.transforms.base.basic_transform import BasicTransform
+from batchgeneratorsv2.transforms.intensity.brightness import MultiplicativeBrightnessTransform
+from batchgeneratorsv2.transforms.intensity.contrast import ContrastTransform, BGContrast
+from batchgeneratorsv2.transforms.intensity.gamma import GammaTransform
+from batchgeneratorsv2.transforms.intensity.gaussian_noise import GaussianNoiseTransform
+from batchgeneratorsv2.transforms.nnunet.random_binary_operator import ApplyRandomBinaryOperatorTransform
+from batchgeneratorsv2.transforms.nnunet.remove_connected_components import \
+    RemoveRandomConnectedComponentFromOneHotEncodingTransform
+from batchgeneratorsv2.transforms.nnunet.seg_to_onehot import MoveSegAsOneHotToDataTransform
+from batchgeneratorsv2.transforms.noise.gaussian_blur import GaussianBlurTransform
+from batchgeneratorsv2.transforms.spatial.low_resolution import SimulateLowResolutionTransform
+from batchgeneratorsv2.transforms.spatial.mirroring import MirrorTransform
+from batchgeneratorsv2.transforms.spatial.spatial import SpatialTransform
+from batchgeneratorsv2.transforms.utils.compose import ComposeTransforms
+from batchgeneratorsv2.transforms.utils.deep_supervision_downsampling import DownsampleSegForDSTransform
+from batchgeneratorsv2.transforms.utils.nnunet_masking import MaskImageTransform
+from batchgeneratorsv2.transforms.utils.pseudo2d import Convert3DTo2DTransform, Convert2DTo3DTransform
+from batchgeneratorsv2.transforms.utils.random import RandomTransform
+from batchgeneratorsv2.transforms.utils.remove_label import RemoveLabelTansform
+from batchgeneratorsv2.transforms.utils.seg_to_regions import ConvertSegmentationToRegionsTransform
+from torch import autocast, nn
+from torch import distributed as dist
 from torch._dynamo import OptimizedModule
+from torch.cuda import device_count
+from torch import GradScaler
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from nnunetv2.configuration import ANISO_THRESHOLD, default_num_processes
 from nnunetv2.evaluation.evaluate_predictions import compute_metrics_on_folder
@@ -29,43 +50,25 @@ from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
 from nnunetv2.inference.sliding_window_prediction import compute_gaussian
 from nnunetv2.paths import nnUNet_preprocessed, nnUNet_results
 from nnunetv2.training.data_augmentation.compute_initial_patch_size import get_patch_size
-from nnunetv2.training.data_augmentation.custom_transforms.cascade_transforms import MoveSegAsOneHotToData, \
-    ApplyRandomBinaryOperatorTransform, RemoveRandomConnectedComponentFromOneHotEncodingTransform
-from nnunetv2.training.data_augmentation.custom_transforms.deep_supervision_donwsampling import \
-    DownsampleSegForDSTransform2
-from nnunetv2.training.data_augmentation.custom_transforms.limited_length_multithreaded_augmenter import \
-    LimitedLenWrapper
-from nnunetv2.training.data_augmentation.custom_transforms.masking import MaskTransform
-from nnunetv2.training.data_augmentation.custom_transforms.region_based_training import \
-    ConvertSegmentationToRegionsTransform
-from nnunetv2.training.data_augmentation.custom_transforms.transforms_for_dummy_2d import Convert2DTo3DTransform, \
-    Convert3DTo2DTransform
-from nnunetv2.training.dataloading.data_loader_2d import nnUNetDataLoader2D
-from nnunetv2.training.dataloading.data_loader_3d import nnUNetDataLoader3D
-from nnunetv2.training.dataloading.nnunet_dataset import nnUNetDataset
-from nnunetv2.training.dataloading.utils import get_case_identifiers, unpack_dataset
+from nnunetv2.training.dataloading.nnunet_dataset import infer_dataset_class
+from nnunetv2.training.dataloading.data_loader import nnUNetDataLoader
 from nnunetv2.training.logging.nnunet_logger import nnUNetLogger
 from nnunetv2.training.loss.compound_losses import DC_and_CE_loss, DC_and_BCE_loss
 from nnunetv2.training.loss.deep_supervision import DeepSupervisionWrapper
 from nnunetv2.training.loss.dice import get_tp_fp_fn_tn, MemoryEfficientSoftDiceLoss
 from nnunetv2.training.lr_scheduler.polylr import PolyLRScheduler
 from nnunetv2.utilities.collate_outputs import collate_outputs
+from nnunetv2.utilities.crossval_split import generate_crossval_split
 from nnunetv2.utilities.default_n_proc_DA import get_allowed_n_proc_DA
 from nnunetv2.utilities.file_path_utilities import check_workers_alive_and_busy
 from nnunetv2.utilities.get_network_from_plans import get_network_from_plans
 from nnunetv2.utilities.helpers import empty_cache, dummy_context
 from nnunetv2.utilities.label_handling.label_handling import convert_labelmap_to_one_hot, determine_num_input_channels
+
 from nnunetv2.utilities.plans_handling.plans_handler import PlansManager, ConfigurationManager
-from sklearn.model_selection import KFold
-from torch import autocast, nn
-from torch import distributed as dist
-from torch.cuda import device_count
-from torch.cuda.amp import GradScaler
-from torch.nn.parallel import DistributedDataParallel as DDP
-
-
+from nnunetv2.training.dataloading.utils import get_case_identifiers, unpack_dataset
 class nnUNetTrainer(object):
-    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict, unpack_dataset: bool = True,
+    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict,
                  device: torch.device = torch.device('cuda')):
         # From https://grugbrain.dev/. Worth a read ya big brains ;-)
 
@@ -114,7 +117,6 @@ class nnUNetTrainer(object):
         self.configuration_name = configuration
         self.dataset_json = dataset_json
         self.fold = fold
-        self.unpack_dataset = unpack_dataset
 
         ### Setting all the folder names. We need to make sure things don't crash in case we are just running
         # inference and some of the folders may not be defined!
@@ -127,6 +129,7 @@ class nnUNetTrainer(object):
 
         self.preprocessed_dataset_folder = join(self.preprocessed_dataset_folder_base,
                                                 self.configuration_manager.data_identifier)
+        self.dataset_class = None  # -> initialize
         # unlike the previous nnunet folder_with_segs_from_previous_stage is now part of the plans. For now it has to
         # be a different configuration in the same plans
         # IMPORTANT! the mapping must be bijective, so lowres must point to fullres and vice versa (using
@@ -142,6 +145,7 @@ class nnUNetTrainer(object):
         self.initial_lr = 1e-2
         self.weight_decay = 3e-5
         self.oversample_foreground_percent = 0.33
+        self.probabilistic_oversampling = False
         self.num_iterations_per_epoch = 250
         self.num_val_iterations_per_epoch = 50
         self.num_epochs = 1000
@@ -154,9 +158,9 @@ class nnUNetTrainer(object):
         # needed for predictions. We do sigmoid in case of (overlapping) regions
 
         self.num_input_channels = None  # -> self.initialize()
-        self.network = None  # -> self._get_network()
+        self.network = None  # -> self.build_network_architecture()
         self.optimizer = self.lr_scheduler = None  # -> self.initialize
-        self.grad_scaler = GradScaler() if self.device.type == 'cuda' else None
+        self.grad_scaler = GradScaler("cuda") if self.device.type == 'cuda' else None
         self.loss = None  # -> self.initialize
 
         ### Simple logging. Don't take that away from me!
@@ -183,10 +187,6 @@ class nnUNetTrainer(object):
         self.save_every = 50
         self.disable_checkpointing = False
 
-        ## DDP batch size and oversampling can differ between workers and needs adaptation
-        # we need to change the batch size in DDP because we don't use any of those distributed samplers
-        self._set_batch_size_and_oversample()
-
         self.was_initialized = False
 
         self.print_to_log_file("\n#######################################################################\n"
@@ -199,6 +199,10 @@ class nnUNetTrainer(object):
 
     def initialize(self):
         if not self.was_initialized:
+            ## DDP batch size and oversampling can differ between workers and needs adaptation
+            # we need to change the batch size in DDP because we don't use any of those distributed samplers
+            self._set_batch_size_and_oversample()
+
             self.num_input_channels = determine_num_input_channels(self.plans_manager, self.configuration_manager,
                                                                    self.dataset_json)
 
@@ -218,17 +222,47 @@ class nnUNetTrainer(object):
             # if ddp, wrap in DDP wrapper
             if self.is_ddp:
                 self.network = torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.network)
-                # self.network = DDP(self.network, device_ids=[self.local_rank])
-                self.network = DDP(self.network, device_ids=[self.local_rank], find_unused_parameters=True)
+                self.network = DDP(self.network, device_ids=[self.local_rank])
 
             self.loss = self._build_loss()
+
+            self.dataset_class = infer_dataset_class(self.preprocessed_dataset_folder)
+
+            # torch 2.2.2 crashes upon compiling CE loss
+            # if self._do_i_compile():
+            #     self.loss = torch.compile(self.loss)
             self.was_initialized = True
         else:
             raise RuntimeError("You have called self.initialize even though the trainer was already initialized. "
                                "That should not happen.")
 
     def _do_i_compile(self):
-        return ('nnUNet_compile' in os.environ.keys()) and (os.environ['nnUNet_compile'].lower() in ('true', '1', 't'))
+        # new default: compile is enabled!
+
+        # compile does not work on mps
+        if self.device == torch.device('mps'):
+            if 'nnUNet_compile' in os.environ.keys() and os.environ['nnUNet_compile'].lower() in ('true', '1', 't'):
+                self.print_to_log_file("INFO: torch.compile disabled because of unsupported mps device")
+            return False
+
+        # CPU compile crashes for 2D models. Not sure if we even want to support CPU compile!? Better disable
+        if self.device == torch.device('cpu'):
+            if 'nnUNet_compile' in os.environ.keys() and os.environ['nnUNet_compile'].lower() in ('true', '1', 't'):
+                self.print_to_log_file("INFO: torch.compile disabled because device is CPU")
+            return False
+
+        # default torch.compile doesn't work on windows because there are apparently no triton wheels for it
+        # https://discuss.pytorch.org/t/windows-support-timeline-for-torch-compile/182268/2
+        if os.name == 'nt':
+            if 'nnUNet_compile' in os.environ.keys() and os.environ['nnUNet_compile'].lower() in ('true', '1', 't'):
+                self.print_to_log_file("INFO: torch.compile disabled because Windows is not natively supported. If "
+                                       "you know what you are doing, check https://discuss.pytorch.org/t/windows-support-timeline-for-torch-compile/182268/2")
+            return False
+
+        if 'nnUNet_compile' not in os.environ.keys():
+            return True
+        else:
+            return os.environ['nnUNet_compile'].lower() in ('true', '1', 't')
 
     def _save_debug_information(self):
         # saving some debug information
@@ -307,8 +341,6 @@ class nnUNetTrainer(object):
             self.batch_size = self.configuration_manager.batch_size
         else:
             # batch size is distributed over DDP workers and we need to change oversample_percent for each worker
-            batch_sizes = []
-            oversample_percents = []
 
             world_size = dist.get_world_size()
             my_rank = dist.get_rank()
@@ -317,36 +349,36 @@ class nnUNetTrainer(object):
             assert global_batch_size >= world_size, 'Cannot run DDP if the batch size is smaller than the number of ' \
                                                     'GPUs... Duh.'
 
-            batch_size_per_GPU = np.ceil(global_batch_size / world_size).astype(int)
+            batch_size_per_GPU = [global_batch_size // world_size] * world_size
+            batch_size_per_GPU = [batch_size_per_GPU[i] + 1
+                                  if (batch_size_per_GPU[i] * world_size + i) < global_batch_size
+                                  else batch_size_per_GPU[i]
+                                  for i in range(len(batch_size_per_GPU))]
+            assert sum(batch_size_per_GPU) == global_batch_size
 
-            for rank in range(world_size):
-                if (rank + 1) * batch_size_per_GPU > global_batch_size:
-                    batch_size = batch_size_per_GPU - ((rank + 1) * batch_size_per_GPU - global_batch_size)
-                else:
-                    batch_size = batch_size_per_GPU
+            sample_id_low = 0 if my_rank == 0 else np.sum(batch_size_per_GPU[:my_rank])
+            sample_id_high = np.sum(batch_size_per_GPU[:my_rank + 1])
 
-                batch_sizes.append(batch_size)
+            # This is how oversampling is determined in DataLoader
+            # round(self.batch_size * (1 - self.oversample_foreground_percent))
+            # We need to use the same scheme here because an oversample of 0.33 with a batch size of 2 will be rounded
+            # to an oversample of 0.5 (1 sample random, one oversampled). This may get lost if we just numerically
+            # compute oversample
+            oversample = [True if not i < round(global_batch_size * (1 - self.oversample_foreground_percent)) else False
+                          for i in range(global_batch_size)]
 
-                sample_id_low = 0 if len(batch_sizes) == 0 else np.sum(batch_sizes[:-1])
-                sample_id_high = np.sum(batch_sizes)
+            if sample_id_high / global_batch_size < (1 - self.oversample_foreground_percent):
+                oversample_percent = 0.0
+            elif sample_id_low / global_batch_size > (1 - self.oversample_foreground_percent):
+                oversample_percent = 1.0
+            else:
+                oversample_percent = sum(oversample[sample_id_low:sample_id_high]) / batch_size_per_GPU[my_rank]
 
-                if sample_id_high / global_batch_size < (1 - self.oversample_foreground_percent):
-                    oversample_percents.append(0.0)
-                elif sample_id_low / global_batch_size > (1 - self.oversample_foreground_percent):
-                    oversample_percents.append(1.0)
-                else:
-                    percent_covered_by_this_rank = sample_id_high / global_batch_size - sample_id_low / global_batch_size
-                    oversample_percent_here = 1 - (((1 - self.oversample_foreground_percent) -
-                                                    sample_id_low / global_batch_size) / percent_covered_by_this_rank)
-                    oversample_percents.append(oversample_percent_here)
+            print("worker", my_rank, "oversample", oversample_percent)
+            print("worker", my_rank, "batch_size", batch_size_per_GPU[my_rank])
 
-            print("worker", my_rank, "oversample", oversample_percents[my_rank])
-            print("worker", my_rank, "batch_size", batch_sizes[my_rank])
-            # self.print_to_log_file("worker", my_rank, "oversample", oversample_percents[my_rank])
-            # self.print_to_log_file("worker", my_rank, "batch_size", batch_sizes[my_rank])
-
-            self.batch_size = batch_sizes[my_rank]
-            self.oversample_foreground_percent = oversample_percents[my_rank]
+            self.batch_size = batch_size_per_GPU[my_rank]
+            self.oversample_foreground_percent = oversample_percent
 
     def _build_loss(self):
         if self.label_manager.has_regions:
@@ -360,18 +392,28 @@ class nnUNetTrainer(object):
                                    'smooth': 1e-5, 'do_bg': False, 'ddp': self.is_ddp}, {}, weight_ce=1, weight_dice=1,
                                   ignore_label=self.label_manager.ignore_label, dice_class=MemoryEfficientSoftDiceLoss)
 
+        if self._do_i_compile():
+            loss.dc = torch.compile(loss.dc)
+
         # we give each output a weight which decreases exponentially (division by 2) as the resolution decreases
         # this gives higher resolution outputs more weight in the loss
 
         if self.enable_deep_supervision:
             deep_supervision_scales = self._get_deep_supervision_scales()
-            weights = np.array([1 / (2**i) for i in range(len(deep_supervision_scales))])
-            weights[-1] = 0
+            weights = np.array([1 / (2 ** i) for i in range(len(deep_supervision_scales))])
+            if self.is_ddp and not self._do_i_compile():
+                # very strange and stupid interaction. DDP crashes and complains about unused parameters due to
+                # weights[-1] = 0. Interestingly this crash doesn't happen with torch.compile enabled. Strange stuff.
+                # Anywho, the simple fix is to set a very low weight to this.
+                weights[-1] = 1e-6
+            else:
+                weights[-1] = 0
 
             # we don't use the lowest 2 outputs. Normalize weights so that they sum to 1
             weights = weights / weights.sum()
             # now wrap the loss
             loss = DeepSupervisionWrapper(loss, weights)
+
         return loss
 
     def configure_rotation_dummyDA_mirroring_and_inital_patch_size(self):
@@ -385,17 +427,9 @@ class nnUNetTrainer(object):
             do_dummy_2d_data_aug = False
             # todo revisit this parametrization
             if max(patch_size) / min(patch_size) > 1.5:
-                rotation_for_DA = {
-                    'x': (-15. / 360 * 2. * np.pi, 15. / 360 * 2. * np.pi),
-                    'y': (0, 0),
-                    'z': (0, 0)
-                }
+                rotation_for_DA = (-15. / 360 * 2. * np.pi, 15. / 360 * 2. * np.pi)
             else:
-                rotation_for_DA = {
-                    'x': (-180. / 360 * 2. * np.pi, 180. / 360 * 2. * np.pi),
-                    'y': (0, 0),
-                    'z': (0, 0)
-                }
+                rotation_for_DA = (-180. / 360 * 2. * np.pi, 180. / 360 * 2. * np.pi)
             mirror_axes = (0, 1)
         elif dim == 3:
             # todo this is not ideal. We could also have patch_size (64, 16, 128) in which case a full 180deg 2d rot would be bad
@@ -403,17 +437,9 @@ class nnUNetTrainer(object):
             do_dummy_2d_data_aug = (max(patch_size) / patch_size[0]) > ANISO_THRESHOLD
             if do_dummy_2d_data_aug:
                 # why do we rotate 180 deg here all the time? We should also restrict it
-                rotation_for_DA = {
-                    'x': (-180. / 360 * 2. * np.pi, 180. / 360 * 2. * np.pi),
-                    'y': (0, 0),
-                    'z': (0, 0)
-                }
+                rotation_for_DA = (-180. / 360 * 2. * np.pi, 180. / 360 * 2. * np.pi)
             else:
-                rotation_for_DA = {
-                    'x': (-30. / 360 * 2. * np.pi, 30. / 360 * 2. * np.pi),
-                    'y': (-30. / 360 * 2. * np.pi, 30. / 360 * 2. * np.pi),
-                    'z': (-30. / 360 * 2. * np.pi, 30. / 360 * 2. * np.pi),
-                }
+                rotation_for_DA = (-30. / 360 * 2. * np.pi, 30. / 360 * 2. * np.pi)
             mirror_axes = (0, 1, 2)
         else:
             raise RuntimeError()
@@ -421,7 +447,9 @@ class nnUNetTrainer(object):
         # todo this function is stupid. It doesn't even use the correct scale range (we keep things as they were in the
         #  old nnunet for now)
         initial_patch_size = get_patch_size(patch_size[-dim:],
-                                            *rotation_for_DA.values(),
+                                            rotation_for_DA,
+                                            rotation_for_DA,
+                                            rotation_for_DA,
                                             (0.85, 1.25))
         if do_dummy_2d_data_aug:
             initial_patch_size[0] = patch_size[0]
@@ -515,36 +543,32 @@ class nnUNetTrainer(object):
     def do_split(self):
         """
         The default split is a 5 fold CV on all available training cases. nnU-Net will create a split (it is seeded,
-        so always the same) and save it as splits_final.pkl file in the preprocessed data directory.
+        so always the same) and save it as splits_final.json file in the preprocessed data directory.
         Sometimes you may want to create your own split for various reasons. For this you will need to create your own
-        splits_final.pkl file. If this file is present, nnU-Net is going to use it and whatever splits are defined in
+        splits_final.json file. If this file is present, nnU-Net is going to use it and whatever splits are defined in
         it. You can create as many splits in this file as you want. Note that if you define only 4 splits (fold 0-3)
         and then set fold=4 when training (that would be the fifth split), nnU-Net will print a warning and proceed to
         use a random 80:20 data split.
         :return:
         """
+        if self.dataset_class is None:
+            self.dataset_class = infer_dataset_class(self.preprocessed_dataset_folder)
+
         if self.fold == "all":
             # if fold==all then we use all images for training and validation
-            case_identifiers = get_case_identifiers(self.preprocessed_dataset_folder)
+            case_identifiers = self.dataset_class.get_identifiers(self.preprocessed_dataset_folder)
             tr_keys = case_identifiers
             val_keys = tr_keys
         else:
             splits_file = join(self.preprocessed_dataset_folder_base, "splits_final.json")
-            dataset = nnUNetDataset(self.preprocessed_dataset_folder, case_identifiers=None,
-                                    num_images_properties_loading_threshold=0,
-                                    folder_with_segs_from_previous_stage=self.folder_with_segs_from_previous_stage)
+            dataset = self.dataset_class(self.preprocessed_dataset_folder,
+                                         identifiers=None,
+                                         folder_with_segs_from_previous_stage=self.folder_with_segs_from_previous_stage)
             # if the split file does not exist we need to create it
             if not isfile(splits_file):
                 self.print_to_log_file("Creating new 5-fold cross-validation split...")
-                splits = []
-                all_keys_sorted = np.sort(list(dataset.keys()))
-                kfold = KFold(n_splits=5, shuffle=True, random_state=12345)
-                for i, (train_idx, test_idx) in enumerate(kfold.split(all_keys_sorted)):
-                    train_keys = np.array(all_keys_sorted)[train_idx]
-                    test_keys = np.array(all_keys_sorted)[test_idx]
-                    splits.append({})
-                    splits[-1]['train'] = list(train_keys)
-                    splits[-1]['val'] = list(test_keys)
+                all_keys_sorted = list(np.sort(list(dataset.identifiers)))
+                splits = generate_crossval_split(all_keys_sorted, seed=12345, n_splits=5)
                 save_json(splits, splits_file)
 
             else:
@@ -564,7 +588,7 @@ class nnUNetTrainer(object):
                                        "random (but seeded) 80:20 split!" % (self.fold, len(splits)))
                 # if we request a fold that is not in the split file, create a random 80:20 split
                 rnd = np.random.RandomState(seed=12345 + self.fold)
-                keys = np.sort(list(dataset.keys()))
+                keys = np.sort(list(dataset.identifiers))
                 idx_tr = rnd.choice(len(keys), int(len(keys) * 0.8), replace=False)
                 idx_val = [i for i in range(len(keys)) if i not in idx_tr]
                 tr_keys = [keys[i] for i in idx_tr]
@@ -582,23 +606,22 @@ class nnUNetTrainer(object):
 
         # load the datasets for training and validation. Note that we always draw random samples so we really don't
         # care about distributing training cases across GPUs.
-        dataset_tr = nnUNetDataset(self.preprocessed_dataset_folder, tr_keys,
-                                   folder_with_segs_from_previous_stage=self.folder_with_segs_from_previous_stage,
-                                   num_images_properties_loading_threshold=0)
-        dataset_val = nnUNetDataset(self.preprocessed_dataset_folder, val_keys,
-                                    folder_with_segs_from_previous_stage=self.folder_with_segs_from_previous_stage,
-                                    num_images_properties_loading_threshold=0)
+        dataset_tr = self.dataset_class(self.preprocessed_dataset_folder, tr_keys,
+                                        folder_with_segs_from_previous_stage=self.folder_with_segs_from_previous_stage)
+        dataset_val = self.dataset_class(self.preprocessed_dataset_folder, val_keys,
+                                         folder_with_segs_from_previous_stage=self.folder_with_segs_from_previous_stage)
         return dataset_tr, dataset_val
 
     def get_dataloaders(self):
+        if self.dataset_class is None:
+            self.dataset_class = infer_dataset_class(self.preprocessed_dataset_folder)
+
         # we use the patch size to determine whether we need 2D or 3D dataloaders. We also use it to determine whether
         # we need to use dummy 2D augmentation (in case of 3D training) and what our initial patch size should be
         patch_size = self.configuration_manager.patch_size
-        dim = len(patch_size)
 
         # needed for deep supervision: how much do we need to downscale the segmentation targets for the different
         # outputs?
-
         deep_supervision_scales = self._get_deep_supervision_scales()
 
         (
@@ -611,7 +634,6 @@ class nnUNetTrainer(object):
         # training pipeline
         tr_transforms = self.get_training_transforms(
             patch_size, rotation_for_DA, deep_supervision_scales, mirror_axes, do_dummy_2d_data_aug,
-            order_resampling_data=3, order_resampling_seg=1,
             use_mask_for_norm=self.configuration_manager.use_mask_for_norm,
             is_cascaded=self.is_cascaded, foreground_labels=self.label_manager.foreground_labels,
             regions=self.label_manager.foreground_regions if self.label_manager.has_regions else None,
@@ -625,176 +647,227 @@ class nnUNetTrainer(object):
                                                         self.label_manager.has_regions else None,
                                                         ignore_label=self.label_manager.ignore_label)
 
-        dl_tr, dl_val = self.get_plain_dataloaders(initial_patch_size, dim)
+        dataset_tr, dataset_val = self.get_tr_and_val_datasets()
+
+        dl_tr = nnUNetDataLoader(dataset_tr, self.batch_size,
+                                 initial_patch_size,
+                                 self.configuration_manager.patch_size,
+                                 self.label_manager,
+                                 oversample_foreground_percent=self.oversample_foreground_percent,
+                                 sampling_probabilities=None, pad_sides=None, transforms=tr_transforms,
+                                 probabilistic_oversampling=self.probabilistic_oversampling)
+        dl_val = nnUNetDataLoader(dataset_val, self.batch_size,
+                                  self.configuration_manager.patch_size,
+                                  self.configuration_manager.patch_size,
+                                  self.label_manager,
+                                  oversample_foreground_percent=self.oversample_foreground_percent,
+                                  sampling_probabilities=None, pad_sides=None, transforms=val_transforms,
+                                  probabilistic_oversampling=self.probabilistic_oversampling)
 
         allowed_num_processes = get_allowed_n_proc_DA()
         if allowed_num_processes == 0:
-            mt_gen_train = SingleThreadedAugmenter(dl_tr, tr_transforms)
-            mt_gen_val = SingleThreadedAugmenter(dl_val, val_transforms)
+            mt_gen_train = SingleThreadedAugmenter(dl_tr, None)
+            mt_gen_val = SingleThreadedAugmenter(dl_val, None)
         else:
-            mt_gen_train = LimitedLenWrapper(self.num_iterations_per_epoch, data_loader=dl_tr, transform=tr_transforms,
-                                             num_processes=allowed_num_processes, num_cached=6, seeds=None,
-                                             pin_memory=self.device.type == 'cuda', wait_time=0.02)
-            mt_gen_val = LimitedLenWrapper(self.num_val_iterations_per_epoch, data_loader=dl_val,
-                                           transform=val_transforms, num_processes=max(1, allowed_num_processes // 2),
-                                           num_cached=3, seeds=None, pin_memory=self.device.type == 'cuda',
-                                           wait_time=0.02)
+            mt_gen_train = NonDetMultiThreadedAugmenter(data_loader=dl_tr, transform=None,
+                                                        num_processes=allowed_num_processes,
+                                                        num_cached=max(6, allowed_num_processes // 2), seeds=None,
+                                                        pin_memory=self.device.type == 'cuda', wait_time=0.002)
+            mt_gen_val = NonDetMultiThreadedAugmenter(data_loader=dl_val,
+                                                      transform=None, num_processes=max(1, allowed_num_processes // 2),
+                                                      num_cached=max(3, allowed_num_processes // 4), seeds=None,
+                                                      pin_memory=self.device.type == 'cuda',
+                                                      wait_time=0.002)
+        # # let's get this party started
+        _ = next(mt_gen_train)
+        _ = next(mt_gen_val)
         return mt_gen_train, mt_gen_val
-
-    def get_plain_dataloaders(self, initial_patch_size: Tuple[int, ...], dim: int):
-        dataset_tr, dataset_val = self.get_tr_and_val_datasets()
-
-        if dim == 2:
-            dl_tr = nnUNetDataLoader2D(dataset_tr, self.batch_size,
-                                       initial_patch_size,
-                                       self.configuration_manager.patch_size,
-                                       self.label_manager,
-                                       oversample_foreground_percent=self.oversample_foreground_percent,
-                                       sampling_probabilities=None, pad_sides=None)
-            dl_val = nnUNetDataLoader2D(dataset_val, self.batch_size,
-                                        self.configuration_manager.patch_size,
-                                        self.configuration_manager.patch_size,
-                                        self.label_manager,
-                                        oversample_foreground_percent=self.oversample_foreground_percent,
-                                        sampling_probabilities=None, pad_sides=None)
-        else:
-            dl_tr = nnUNetDataLoader3D(dataset_tr, self.batch_size,
-                                       initial_patch_size,
-                                       self.configuration_manager.patch_size,
-                                       self.label_manager,
-                                       oversample_foreground_percent=self.oversample_foreground_percent,
-                                       sampling_probabilities=None, pad_sides=None)
-            dl_val = nnUNetDataLoader3D(dataset_val, self.batch_size,
-                                        self.configuration_manager.patch_size,
-                                        self.configuration_manager.patch_size,
-                                        self.label_manager,
-                                        oversample_foreground_percent=self.oversample_foreground_percent,
-                                        sampling_probabilities=None, pad_sides=None)
-        return dl_tr, dl_val
 
     @staticmethod
     def get_training_transforms(
-        patch_size: Union[np.ndarray, Tuple[int]],
-        rotation_for_DA: dict,
-        deep_supervision_scales: Union[List, Tuple, None],
-        mirror_axes: Tuple[int, ...],
-        do_dummy_2d_data_aug: bool,
-        order_resampling_data: int = 3,
-        order_resampling_seg: int = 1,
-        border_val_seg: int = -1,
-        use_mask_for_norm: List[bool] = None,
-        is_cascaded: bool = False,
-        foreground_labels: Union[Tuple[int, ...], List[int]] = None,
-        regions: List[Union[List[int], Tuple[int, ...], int]] = None,
-        ignore_label: int = None,
-    ) -> AbstractTransform:
-        tr_transforms = []
+            patch_size: Union[np.ndarray, Tuple[int]],
+            rotation_for_DA: RandomScalar,
+            deep_supervision_scales: Union[List, Tuple, None],
+            mirror_axes: Tuple[int, ...],
+            do_dummy_2d_data_aug: bool,
+            use_mask_for_norm: List[bool] = None,
+            is_cascaded: bool = False,
+            foreground_labels: Union[Tuple[int, ...], List[int]] = None,
+            regions: List[Union[List[int], Tuple[int, ...], int]] = None,
+            ignore_label: int = None,
+    ) -> BasicTransform:
+        transforms = []
         if do_dummy_2d_data_aug:
             ignore_axes = (0,)
-            tr_transforms.append(Convert3DTo2DTransform())
+            transforms.append(Convert3DTo2DTransform())
             patch_size_spatial = patch_size[1:]
         else:
             patch_size_spatial = patch_size
             ignore_axes = None
-
-        tr_transforms.append(SpatialTransform(
-            patch_size_spatial, patch_center_dist_from_border=None,
-            do_elastic_deform=False, alpha=(0, 0), sigma=(0, 0),
-            do_rotation=True, angle_x=rotation_for_DA['x'], angle_y=rotation_for_DA['y'], angle_z=rotation_for_DA['z'],
-            p_rot_per_axis=1,  # todo experiment with this
-            do_scale=True, scale=(0.7, 1.4),
-            border_mode_data="constant", border_cval_data=0, order_data=order_resampling_data,
-            border_mode_seg="constant", border_cval_seg=border_val_seg, order_seg=order_resampling_seg,
-            random_crop=False,  # random cropping is part of our dataloaders
-            p_el_per_sample=0, p_scale_per_sample=0.2, p_rot_per_sample=0.2,
-            independent_scale_for_each_axis=False  # todo experiment with this
-        ))
+        transforms.append(
+            SpatialTransform(
+                patch_size_spatial, patch_center_dist_from_border=0, random_crop=False, p_elastic_deform=0,
+                p_rotation=0.2,
+                rotation=rotation_for_DA, p_scaling=0.2, scaling=(0.7, 1.4), p_synchronize_scaling_across_axes=1,
+                bg_style_seg_sampling=False  # , mode_seg='nearest'
+            )
+        )
 
         if do_dummy_2d_data_aug:
-            tr_transforms.append(Convert2DTo3DTransform())
+            transforms.append(Convert2DTo3DTransform())
 
-        tr_transforms.append(GaussianNoiseTransform(p_per_sample=0.1))
-        tr_transforms.append(GaussianBlurTransform((0.5, 1.), different_sigma_per_channel=True, p_per_sample=0.2,
-                                                   p_per_channel=0.5))
-        tr_transforms.append(BrightnessMultiplicativeTransform(multiplier_range=(0.75, 1.25), p_per_sample=0.15))
-        tr_transforms.append(ContrastAugmentationTransform(p_per_sample=0.15))
-        tr_transforms.append(SimulateLowResolutionTransform(zoom_range=(0.5, 1), per_channel=True,
-                                                            p_per_channel=0.5,
-                                                            order_downsample=0, order_upsample=3, p_per_sample=0.25,
-                                                            ignore_axes=ignore_axes))
-        tr_transforms.append(GammaTransform((0.7, 1.5), True, True, retain_stats=True, p_per_sample=0.1))
-        tr_transforms.append(GammaTransform((0.7, 1.5), False, True, retain_stats=True, p_per_sample=0.3))
-
+        transforms.append(RandomTransform(
+            GaussianNoiseTransform(
+                noise_variance=(0, 0.1),
+                p_per_channel=1,
+                synchronize_channels=True
+            ), apply_probability=0.1
+        ))
+        transforms.append(RandomTransform(
+            GaussianBlurTransform(
+                blur_sigma=(0.5, 1.),
+                synchronize_channels=False,
+                synchronize_axes=False,
+                p_per_channel=0.5, benchmark=True
+            ), apply_probability=0.2
+        ))
+        transforms.append(RandomTransform(
+            MultiplicativeBrightnessTransform(
+                multiplier_range=BGContrast((0.75, 1.25)),
+                synchronize_channels=False,
+                p_per_channel=1
+            ), apply_probability=0.15
+        ))
+        transforms.append(RandomTransform(
+            ContrastTransform(
+                contrast_range=BGContrast((0.75, 1.25)),
+                preserve_range=True,
+                synchronize_channels=False,
+                p_per_channel=1
+            ), apply_probability=0.15
+        ))
+        transforms.append(RandomTransform(
+            SimulateLowResolutionTransform(
+                scale=(0.5, 1),
+                synchronize_channels=False,
+                synchronize_axes=True,
+                ignore_axes=ignore_axes,
+                allowed_channels=None,
+                p_per_channel=0.5
+            ), apply_probability=0.25
+        ))
+        transforms.append(RandomTransform(
+            GammaTransform(
+                gamma=BGContrast((0.7, 1.5)),
+                p_invert_image=1,
+                synchronize_channels=False,
+                p_per_channel=1,
+                p_retain_stats=1
+            ), apply_probability=0.1
+        ))
+        transforms.append(RandomTransform(
+            GammaTransform(
+                gamma=BGContrast((0.7, 1.5)),
+                p_invert_image=0,
+                synchronize_channels=False,
+                p_per_channel=1,
+                p_retain_stats=1
+            ), apply_probability=0.3
+        ))
         if mirror_axes is not None and len(mirror_axes) > 0:
-            tr_transforms.append(MirrorTransform(mirror_axes))
+            transforms.append(
+                MirrorTransform(
+                    allowed_axes=mirror_axes
+                )
+            )
 
         if use_mask_for_norm is not None and any(use_mask_for_norm):
-            tr_transforms.append(MaskTransform([i for i in range(len(use_mask_for_norm)) if use_mask_for_norm[i]],
-                                               mask_idx_in_seg=0, set_outside_to=0))
+            transforms.append(MaskImageTransform(
+                apply_to_channels=[i for i in range(len(use_mask_for_norm)) if use_mask_for_norm[i]],
+                channel_idx_in_seg=0,
+                set_outside_to=0,
+            ))
 
-        tr_transforms.append(RemoveLabelTransform(-1, 0))
-
+        transforms.append(
+            RemoveLabelTansform(-1, 0)
+        )
         if is_cascaded:
             assert foreground_labels is not None, 'We need foreground_labels for cascade augmentations'
-            tr_transforms.append(MoveSegAsOneHotToData(1, foreground_labels, 'seg', 'data'))
-            tr_transforms.append(ApplyRandomBinaryOperatorTransform(
-                channel_idx=list(range(-len(foreground_labels), 0)),
-                p_per_sample=0.4,
-                key="data",
-                strel_size=(1, 8),
-                p_per_label=1))
-            tr_transforms.append(
-                RemoveRandomConnectedComponentFromOneHotEncodingTransform(
-                    channel_idx=list(range(-len(foreground_labels), 0)),
-                    key="data",
-                    p_per_sample=0.2,
-                    fill_with_other_class_p=0,
-                    dont_do_if_covers_more_than_x_percent=0.15))
-
-        tr_transforms.append(RenameTransform('seg', 'target', True))
+            transforms.append(
+                MoveSegAsOneHotToDataTransform(
+                    source_channel_idx=1,
+                    all_labels=foreground_labels,
+                    remove_channel_from_source=True
+                )
+            )
+            transforms.append(
+                RandomTransform(
+                    ApplyRandomBinaryOperatorTransform(
+                        channel_idx=list(range(-len(foreground_labels), 0)),
+                        strel_size=(1, 8),
+                        p_per_label=1
+                    ), apply_probability=0.4
+                )
+            )
+            transforms.append(
+                RandomTransform(
+                    RemoveRandomConnectedComponentFromOneHotEncodingTransform(
+                        channel_idx=list(range(-len(foreground_labels), 0)),
+                        fill_with_other_class_p=0,
+                        dont_do_if_covers_more_than_x_percent=0.15,
+                        p_per_label=1
+                    ), apply_probability=0.2
+                )
+            )
 
         if regions is not None:
             # the ignore label must also be converted
-            tr_transforms.append(ConvertSegmentationToRegionsTransform(list(regions) + [ignore_label]
-                                                                       if ignore_label is not None else regions,
-                                                                       'target', 'target'))
+            transforms.append(
+                ConvertSegmentationToRegionsTransform(
+                    regions=list(regions) + [ignore_label] if ignore_label is not None else regions,
+                    channel_in_seg=0
+                )
+            )
 
         if deep_supervision_scales is not None:
-            tr_transforms.append(DownsampleSegForDSTransform2(deep_supervision_scales, 0, input_key='target',
-                                                              output_key='target'))
-        tr_transforms.append(NumpyToTensor(['data', 'target'], 'float'))
-        tr_transforms = Compose(tr_transforms)
-        return tr_transforms
+            transforms.append(DownsampleSegForDSTransform(ds_scales=deep_supervision_scales))
+
+        return ComposeTransforms(transforms)
 
     @staticmethod
     def get_validation_transforms(
-        deep_supervision_scales: Union[List, Tuple, None],
-        is_cascaded: bool = False,
-        foreground_labels: Union[Tuple[int, ...], List[int]] = None,
-        regions: List[Union[List[int], Tuple[int, ...], int]] = None,
-        ignore_label: int = None,
-    ) -> AbstractTransform:
-        val_transforms = []
-        val_transforms.append(RemoveLabelTransform(-1, 0))
+            deep_supervision_scales: Union[List, Tuple, None],
+            is_cascaded: bool = False,
+            foreground_labels: Union[Tuple[int, ...], List[int]] = None,
+            regions: List[Union[List[int], Tuple[int, ...], int]] = None,
+            ignore_label: int = None,
+    ) -> BasicTransform:
+        transforms = []
+        transforms.append(
+            RemoveLabelTansform(-1, 0)
+        )
 
         if is_cascaded:
-            val_transforms.append(MoveSegAsOneHotToData(1, foreground_labels, 'seg', 'data'))
-
-        val_transforms.append(RenameTransform('seg', 'target', True))
+            transforms.append(
+                MoveSegAsOneHotToDataTransform(
+                    source_channel_idx=1,
+                    all_labels=foreground_labels,
+                    remove_channel_from_source=True
+                )
+            )
 
         if regions is not None:
             # the ignore label must also be converted
-            val_transforms.append(ConvertSegmentationToRegionsTransform(list(regions) + [ignore_label]
-                                                                        if ignore_label is not None else regions,
-                                                                        'target', 'target'))
+            transforms.append(
+                ConvertSegmentationToRegionsTransform(
+                    regions=list(regions) + [ignore_label] if ignore_label is not None else regions,
+                    channel_in_seg=0
+                )
+            )
 
         if deep_supervision_scales is not None:
-            val_transforms.append(DownsampleSegForDSTransform2(deep_supervision_scales, 0, input_key='target',
-                                                               output_key='target'))
-
-        val_transforms.append(NumpyToTensor(['data', 'target'], 'float'))
-        val_transforms = Compose(val_transforms)
-        return val_transforms
+            transforms.append(DownsampleSegForDSTransform(ds_scales=deep_supervision_scales))
+        return ComposeTransforms(transforms)
 
     def set_deep_supervision_enabled(self, enabled: bool):
         """
@@ -802,13 +875,21 @@ class nnUNetTrainer(object):
         chances you need to change this as well!
         """
         if self.is_ddp:
-            self.network.module.decoder.deep_supervision = enabled
+            mod = self.network.module
         else:
-            self.network.decoder.deep_supervision = enabled
+            mod = self.network
+        if isinstance(mod, OptimizedModule):
+            mod = mod._orig_mod
+
+        mod.decoder.deep_supervision = enabled
 
     def on_train_start(self):
         if not self.was_initialized:
             self.initialize()
+
+        # dataloaders must be instantiated here (instead of __init__) because they need access to the training data
+        # which may not be present  when doing inference
+        self.dataloader_train, self.dataloader_val = self.get_dataloaders()
 
         maybe_mkdir_p(self.output_folder)
 
@@ -819,7 +900,7 @@ class nnUNetTrainer(object):
         empty_cache(self.device)
 
         # maybe unpack
-        if self.unpack_dataset and self.local_rank == 0:
+        if self.local_rank == 0:
             self.print_to_log_file('unpacking dataset...')
             unpack_dataset(self.preprocessed_dataset_folder, unpack_segmentation=True, overwrite_existing=False,
                            num_processes=max(1, round(get_allowed_n_proc_DA() // 2)))
@@ -827,10 +908,6 @@ class nnUNetTrainer(object):
 
         if self.is_ddp:
             dist.barrier()
-
-        # dataloaders must be instantiated here because they need access to the training data which may not be present
-        # when doing inference
-        self.dataloader_train, self.dataloader_val = self.get_dataloaders()
 
         # copy plans and dataset.json so that they can be used for restoring everything we need for inference
         save_json(self.plans_manager.plans, join(self.output_folder_base, 'plans.json'), sort_keys=False)
@@ -863,9 +940,11 @@ class nnUNetTrainer(object):
         old_stdout = sys.stdout
         with open(os.devnull, 'w') as f:
             sys.stdout = f
-            if self.dataloader_train is not None:
+            if self.dataloader_train is not None and \
+                    isinstance(self.dataloader_train, (NonDetMultiThreadedAugmenter, MultiThreadedAugmenter)):
                 self.dataloader_train._finish()
-            if self.dataloader_val is not None:
+            if self.dataloader_val is not None and \
+                    isinstance(self.dataloader_train, (NonDetMultiThreadedAugmenter, MultiThreadedAugmenter)):
                 self.dataloader_val._finish()
             sys.stdout = old_stdout
 
@@ -893,14 +972,15 @@ class nnUNetTrainer(object):
             target = target.to(self.device, non_blocking=True)
 
         self.optimizer.zero_grad(set_to_none=True)
-        # Autocast is a little bitch.
+        # Autocast can be annoying
         # If the device_type is 'cpu' then it's slow as heck and needs to be disabled.
         # If the device_type is 'mps' then it will complain that mps is not implemented, even if enabled=False is set. Whyyyyyyy. (this is why we don't make use of enabled=False)
         # So autocast will only be active if we have a cuda device.
         with autocast(self.device.type, enabled=True) if self.device.type == 'cuda' else dummy_context():
             output = self.network(data)
             # del data
-            l = self.loss(output, target)
+            l = self.loss(output, target).float()
+            print("LOSS", l.dtype)
 
         if self.grad_scaler is not None:
             self.grad_scaler.scale(l).backward()
@@ -939,7 +1019,7 @@ class nnUNetTrainer(object):
         else:
             target = target.to(self.device, non_blocking=True)
 
-        # Autocast is a little bitch.
+        # Autocast can be annoying
         # If the device_type is 'cpu' then it's slow as heck and needs to be disabled.
         # If the device_type is 'mps' then it will complain that mps is not implemented, even if enabled=False is set. Whyyyyyyy. (this is why we don't make use of enabled=False)
         # So autocast will only be active if we have a cuda device.
@@ -971,7 +1051,10 @@ class nnUNetTrainer(object):
                 # CAREFUL that you don't rely on target after this line!
                 target[target == self.label_manager.ignore_label] = 0
             else:
-                mask = 1 - target[:, -1:]
+                if target.dtype == torch.bool:
+                    mask = ~target[:, -1:]
+                else:
+                    mask = 1 - target[:, -1:]
                 # CAREFUL that you don't rely on target after this line!
                 target = target[:, :-1]
         else:
@@ -1085,7 +1168,7 @@ class nnUNetTrainer(object):
             self.initialize()
 
         if isinstance(filename_or_checkpoint, str):
-            checkpoint = torch.load(filename_or_checkpoint, map_location=self.device)
+            checkpoint = torch.load(filename_or_checkpoint, map_location=self.device, weights_only=False)
         # if state dict comes from nn.DataParallel but we use non-parallel model here then the state dict keys do not
         # match. Use heuristic to make it match
         new_state_dict = {}
@@ -1122,6 +1205,16 @@ class nnUNetTrainer(object):
         self.set_deep_supervision_enabled(False)
         self.network.eval()
 
+        if self.is_ddp and self.batch_size == 1 and self.enable_deep_supervision and self._do_i_compile():
+            self.print_to_log_file("WARNING! batch size is 1 during training and torch.compile is enabled. If you "
+                                   "encounter crashes in validation then this is because torch.compile forgets "
+                                   "to trigger a recompilation of the model with deep supervision disabled. "
+                                   "This causes torch.flip to complain about getting a tuple as input. Just rerun the "
+                                   "validation with --val (exactly the same as before) and then it will work. "
+                                   "Why? Because --val triggers nnU-Net to ONLY run validation meaning that the first "
+                                   "forward pass (where compile is triggered) already has deep supervision disabled. "
+                                   "This is exactly what we need in perform_actual_validation")
+
         predictor = nnUNetPredictor(tile_step_size=0.5, use_gaussian=True, use_mirroring=True,
                                     perform_everything_on_device=True, device=self.device, verbose=False,
                                     verbose_preprocessing=False, allow_tqdm=False)
@@ -1138,11 +1231,14 @@ class nnUNetTrainer(object):
             # the validation keys across the workers.
             _, val_keys = self.do_split()
             if self.is_ddp:
-                val_keys = val_keys[self.local_rank:: dist.get_world_size()]
+                last_barrier_at_idx = len(val_keys) // dist.get_world_size() - 1
 
-            dataset_val = nnUNetDataset(self.preprocessed_dataset_folder, val_keys,
-                                        folder_with_segs_from_previous_stage=self.folder_with_segs_from_previous_stage,
-                                        num_images_properties_loading_threshold=0)
+                val_keys = val_keys[self.local_rank:: dist.get_world_size()]
+                # we cannot just have barriers all over the place because the number of keys each GPU receives can be
+                # different
+
+            dataset_val = self.dataset_class(self.preprocessed_dataset_folder, val_keys,
+                                             folder_with_segs_from_previous_stage=self.folder_with_segs_from_previous_stage)
 
             next_stages = self.configuration_manager.next_stage_names
 
@@ -1151,34 +1247,33 @@ class nnUNetTrainer(object):
 
             results = []
 
-            for k in dataset_val.keys():
+            for i, k in enumerate(dataset_val.identifiers):
                 proceed = not check_workers_alive_and_busy(segmentation_export_pool, worker_list, results,
-                                                 allowed_num_queued=2)
+                                                           allowed_num_queued=2)
                 while not proceed:
                     sleep(0.1)
                     proceed = not check_workers_alive_and_busy(segmentation_export_pool, worker_list, results,
-                                                     allowed_num_queued=2)
+                                                               allowed_num_queued=2)
 
                 self.print_to_log_file(f"predicting {k}")
-                data, seg, properties = dataset_val.load_case(k)
+                data, _, seg_prev, properties = dataset_val.load_case(k)
+
+                # we do [:] to convert blosc2 to numpy
+                data = data[:]
 
                 if self.is_cascaded:
-                    data = np.vstack((data, convert_labelmap_to_one_hot(seg[-1], self.label_manager.foreground_labels,
+                    seg_prev = seg_prev[:]
+                    data = np.vstack((data, convert_labelmap_to_one_hot(seg_prev, self.label_manager.foreground_labels,
                                                                         output_dtype=data.dtype)))
                 with warnings.catch_warnings():
                     # ignore 'The given NumPy array is not writable' warning
                     warnings.simplefilter("ignore")
                     data = torch.from_numpy(data)
 
+                self.print_to_log_file(f'{k}, shape {data.shape}, rank {self.local_rank}')
                 output_filename_truncated = join(validation_output_folder, k)
 
-                try:
-                    prediction = predictor.predict_sliding_window_return_logits(data)
-                except RuntimeError:
-                    predictor.perform_everything_on_device = False
-                    prediction = predictor.predict_sliding_window_return_logits(data)
-                    predictor.perform_everything_on_device = True
-
+                prediction = predictor.predict_sliding_window_return_logits(data)
                 prediction = prediction.cpu()
 
                 # this needs to go into background processes
@@ -1191,8 +1286,8 @@ class nnUNetTrainer(object):
                     )
                 )
                 # for debug purposes
-                # export_prediction(prediction_for_export, properties, self.configuration, self.plans, self.dataset_json,
-                #              output_filename_truncated, save_probabilities)
+                # export_prediction_from_logits(prediction, properties, self.configuration_manager, self.plans_manager,
+                #      self.dataset_json, output_filename_truncated, save_probabilities)
 
                 # if needed, export the softmax prediction for the next stage
                 if next_stages is not None:
@@ -1200,12 +1295,13 @@ class nnUNetTrainer(object):
                         next_stage_config_manager = self.plans_manager.get_configuration(n)
                         expected_preprocessed_folder = join(nnUNet_preprocessed, self.plans_manager.dataset_name,
                                                             next_stage_config_manager.data_identifier)
+                        # next stage may have a different dataset class, do not use self.dataset_class
+                        dataset_class = infer_dataset_class(expected_preprocessed_folder)
 
                         try:
                             # we do this so that we can use load_case and do not have to hard code how loading training cases is implemented
-                            tmp = nnUNetDataset(expected_preprocessed_folder, [k],
-                                                num_images_properties_loading_threshold=0)
-                            d, s, p = tmp.load_case(k)
+                            tmp = dataset_class(expected_preprocessed_folder, [k])
+                            d, _, _, _ = tmp.load_case(k)
                         except FileNotFoundError:
                             self.print_to_log_file(
                                 f"Predicting next stage {n} failed for case {k} because the preprocessed file is missing! "
@@ -1214,18 +1310,23 @@ class nnUNetTrainer(object):
 
                         target_shape = d.shape[1:]
                         output_folder = join(self.output_folder_base, 'predicted_next_stage', n)
-                        output_file = join(output_folder, k + '.npz')
+                        output_file_truncated = join(output_folder, k)
 
                         # resample_and_save(prediction, target_shape, output_file, self.plans_manager, self.configuration_manager, properties,
                         #                   self.dataset_json)
                         results.append(segmentation_export_pool.starmap_async(
                             resample_and_save, (
-                                (prediction, target_shape, output_file, self.plans_manager,
+                                (prediction, target_shape, output_file_truncated, self.plans_manager,
                                  self.configuration_manager,
                                  properties,
-                                 self.dataset_json),
+                                 self.dataset_json,
+                                 default_num_processes,
+                                 dataset_class),
                             )
                         ))
+                # if we don't barrier from time to time we will get nccl timeouts for large datasets. Yuck.
+                if self.is_ddp and i < last_barrier_at_idx and (i + 1) % 20 == 0:
+                    dist.barrier()
 
             _ = [r.get() for r in results]
 
@@ -1240,9 +1341,12 @@ class nnUNetTrainer(object):
                                                 self.dataset_json["file_ending"],
                                                 self.label_manager.foreground_regions if self.label_manager.has_regions else
                                                 self.label_manager.foreground_labels,
-                                                self.label_manager.ignore_label, chill=True)
+                                                self.label_manager.ignore_label, chill=True,
+                                                num_processes=default_num_processes * dist.get_world_size() if
+                                                self.is_ddp else default_num_processes)
             self.print_to_log_file("Validation complete", also_print_to_console=True)
-            self.print_to_log_file("Mean Validation Dice: ", (metrics['foreground_mean']["Dice"]), also_print_to_console=True)
+            self.print_to_log_file("Mean Validation Dice: ", (metrics['foreground_mean']["Dice"]),
+                                   also_print_to_console=True)
 
         self.set_deep_supervision_enabled(True)
         compute_gaussian.cache_clear()

@@ -10,8 +10,8 @@ class L2(nn.MSELoss):
         mse_loss = nn.MSELoss(reduction='none')
         loss = mse_loss(input, target)
 
-        # Create a mask that is 1 where target < 0.1, 0 elsewhere
-        mask = (target < 0.1).float()
+        # Create a mask that is 1 where target > 0.1, 0 elsewhere
+        mask = (target > 0.1).float()
 
         # Apply mask element-wise and sum the losses
         masked_loss = loss * mask

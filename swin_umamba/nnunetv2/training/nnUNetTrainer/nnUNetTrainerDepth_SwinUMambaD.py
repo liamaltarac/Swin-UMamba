@@ -3,16 +3,17 @@
 import os
 from os.path import join
 
-
+import matplotlib.pyplot as plt
 import numpy as np
 
 import torch
 from torch import device, nn
 from torch._C import device
 from torchinfo import summary
-from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim import AdamW, SGD
+from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau,StepLR
 from torch import autocast, nn
+from batchgenerators.transforms.abstract_transforms import AbstractTransform, Compose
 
 
 from time import time, sleep
@@ -24,7 +25,8 @@ from nnunetv2.utilities.plans_handling.plans_handler import ConfigurationManager
 from nnunetv2.nets.SwinUMambaD import get_swin_umamba_d_from_plans
 from nnunetv2.utilities.helpers import empty_cache, dummy_context
 from nnunetv2.utilities.collate_outputs import collate_outputs
-
+from swin_umamba.nnunetv2.training.dataloading.data_loader import nnUNetDataLoader
+from nnunetv2.training.dataloading.data_loader_3d import nnUNetDataLoader3D
 
 
 
@@ -38,14 +40,16 @@ class nnUNetTrainerDepth_SwinUMambaD(nnUNetTrainer):
 
     """ Swin-UMamba$\dagger$ with Mamba-based decoder"""
 
-    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict, unpack_dataset: bool = True,
+    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict, 
                  device: torch.device = torch.device('cuda')):
-        super().__init__(plans, configuration, fold, dataset_json, unpack_dataset, device)
-        self.initial_lr = 1e-4
-        self.weight_decay = 5e-2
-        self.enable_deep_supervision = True
-        self.freeze_encoder_epochs = 10
-        self.num_epochs = 250
+        super().__init__(plans, configuration, fold, dataset_json, device)
+        self.initial_lr = 1e-3
+        self.weight_decay = 5e-4
+        self.enable_deep_supervision = False
+        self.freeze_encoder_epochs = 20
+        self.num_epochs = 500
+        #self.is_ddp=False
+        self.oversample_foreground_percent = False
 
     @staticmethod
     def build_network_architecture(
@@ -71,14 +75,17 @@ class nnUNetTrainerDepth_SwinUMambaD(nnUNetTrainer):
         return model
     
     def configure_optimizers(self):
-        optimizer = AdamW(
+        optimizer = SGD(
             self.network.parameters(),
             lr=self.initial_lr, 
             weight_decay=self.weight_decay, 
-            eps=1e-5,
-            betas=(0.9, 0.999),
             )
-        scheduler = CosineAnnealingLR(optimizer, T_max=self.num_epochs, eta_min=1e-6)
+        #scheduler = CosineAnnealingLR(optimizer, T_max=self.num_epochs, eta_min=1e-6)
+        scheduler = StepLR(
+                optimizer, 
+                step_size=30,  # Drop LR after every 20 epochs
+                gamma=0.5      # Factor by which the learning rate will be reduced (new_lr = lr * gamma)
+            )
 
         self.print_to_log_file(f"Using optimizer {optimizer}")
         self.print_to_log_file(f"Using scheduler {scheduler}")
@@ -113,7 +120,6 @@ class nnUNetTrainerDepth_SwinUMambaD(nnUNetTrainer):
 
         # self.logger.log('mean_fg_dice', mean_fg_dice, self.current_epoch)
         # self.logger.log('dice_per_class_or_region', global_dc_per_class, self.current_epoch)
-        print("LOSS HERE", loss_here)
         self.logger.log('val_losses', loss_here, self.current_epoch)
 
     def on_epoch_end(self):
@@ -170,15 +176,31 @@ class nnUNetTrainerDepth_SwinUMambaD(nnUNetTrainer):
             deep_supervision_scales = None  # for train and val_transforms
         return deep_supervision_scales
     
+    
+    '''@staticmethod
+    def get_training_transforms(patch_size: Union[np.ndarray, Tuple[int]],
+                                rotation_for_DA: dict,
+                                deep_supervision_scales: Union[List, Tuple, None],
+                                mirror_axes: Tuple[int, ...],
+                                do_dummy_2d_data_aug: bool,
+                                order_resampling_data: int = 1,
+                                order_resampling_seg: int = 0,
+                                border_val_seg: int = -1,
+                                use_mask_for_norm: List[bool] = None,
+                                is_cascaded: bool = False,
+                                foreground_labels: Union[Tuple[int, ...], List[int]] = None,
+                                regions: List[Union[List[int], Tuple[int, ...], int]] = None,
+                                ignore_label: int = None) -> AbstractTransform:
+        return nnUNetTrainer.get_validation_transforms(deep_supervision_scales, is_cascaded, foreground_labels,
+                                                       regions, ignore_label)'''
+
 
     # https://github.com/Phyrise/nnUNet_translation/ For img2img Unet
 
     def validation_step(self, batch: dict) -> dict:
         data = batch['data']
         target = batch['target'][0]
-        print("TARGET SHAPE", target.shape)
 
-        print(target)
         data = data.to(self.device, non_blocking=True)
         target = target.to(self.device, non_blocking=True)
 
@@ -198,9 +220,59 @@ class nnUNetTrainerDepth_SwinUMambaD(nnUNetTrainer):
             '''torch.save(data, "data")
             torch.save(output, "output")
             torch.save(target, "target")'''
+            print(target.shape)
+            print(output.shape)
+            plt.imsave("output.png", output[0, ...].cpu().numpy(), cmap='viridis')
+            plt.imsave("target.png", target[0,...].cpu().numpy(), cmap='viridis')
+            plt.imsave("model_input.png", data[0,0, ...].cpu().numpy(), cmap='viridis')
 
             del data
             mse_loss = L2()
             l = mse_loss(output, target)
 
         return {'loss': l.detach().cpu().numpy(), 'tp_hard': 0, 'fp_hard': 0, 'fn_hard': 0}
+    
+
+    '''def get_plain_dataloaders(self, initial_patch_size: Tuple[int, ...], dim: int):
+        dataset_tr, dataset_val = self.get_tr_and_val_datasets()
+
+        initial_patch_size=self.configuration_manager.patch_size
+        dim=dim
+
+        if dim == 2:
+            print("2D dataloader TR", initial_patch_size)
+            dl_tr = nnUNetDataLoader2D(dataset_tr, self.batch_size,
+                                       initial_patch_size,
+                                       self.configuration_manager.patch_size,
+                                       self.label_manager,
+                                       oversample_foreground_percent=self.oversample_foreground_percent,
+                                       sampling_probabilities=None, pad_sides=None)
+            print("2D dataloader VAL")
+            dl_val = nnUNetDataLoader2D(dataset_val, self.batch_size,
+                                        self.configuration_manager.patch_size,
+                                        self.configuration_manager.patch_size,
+                                        self.label_manager,
+                                        oversample_foreground_percent=self.oversample_foreground_percent,
+                                        sampling_probabilities=None, pad_sides=None)
+        else:
+            dl_tr = nnUNetDataLoader3D(dataset_tr, self.batch_size,
+                                       initial_patch_size,
+                                       self.configuration_manager.patch_size,
+                                       self.label_manager,
+                                       oversample_foreground_percent=self.oversample_foreground_percent,
+                                       sampling_probabilities=None, pad_sides=None)
+            dl_val = nnUNetDataLoader3D(dataset_val, self.batch_size,
+                                        self.configuration_manager.patch_size,
+                                        self.configuration_manager.patch_size,
+                                        self.label_manager,
+                                        oversample_foreground_percent=self.oversample_foreground_percent,
+                                        sampling_probabilities=None, pad_sides=None)
+        return dl_tr, dl_val
+        '''
+    def configure_rotation_dummyDA_mirroring_and_inital_patch_size(self):
+        # we need to disable mirroring here so that no mirroring will be applied in inferene!
+        rotation_for_DA, do_dummy_2d_data_aug, initial_patch_size, mirror_axes = \
+            super().configure_rotation_dummyDA_mirroring_and_inital_patch_size()
+        mirror_axes = None
+        self.inference_allowed_mirroring_axes = None
+        return rotation_for_DA, do_dummy_2d_data_aug, initial_patch_size, mirror_axes

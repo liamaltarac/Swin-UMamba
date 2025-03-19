@@ -9,8 +9,9 @@ import glob
 os.environ['nnUNet_results'] = 'results/'  
 os.environ['nnUNet_raw'] = 'raw/'
 os.environ['nnUNet_preprocessed'] = 'preprocessed/'
+os.environ['TORCHINDUCTOR_COMPILE_THREADS'] ='1'
 
-
+os.environ['nnUNet_compile'] = 'False'
 
 from swin_umamba.nnunetv2.run.run_training import run_training
 from swin_umamba.nnunetv2.experiment_planning.plan_and_preprocess_entrypoints import plan_and_preprocess_entry
@@ -63,7 +64,6 @@ if __name__ == '__main__':
 
     '''data_dir = 'data/imgs/'
     target_dir = 'data/gt/'
-
 
 
     print(os.environ)
@@ -127,7 +127,7 @@ if __name__ == '__main__':
             "background": 0
         },
         "channel_names": {
-            "0": "noNorm",
+            "0": "rescale_to_0_1",
         },
         "numTraining": len(list_datas),
         "file_ending": ".npy"
@@ -142,7 +142,7 @@ if __name__ == '__main__':
             "background": 0
         },
         "channel_names": {
-            "0": "noNorm",
+            "0": "rescale_to_0_1",
         },
         "numTraining": len(list_targets),
         "file_ending": ".npy"
@@ -155,9 +155,7 @@ if __name__ == '__main__':
     if 'MPLBACKEND' in os.environ: 
         del os.environ['MPLBACKEND'] # avoid conflicts with matplotlib backend  
         
-    print("OSSSSS 0", os.environ['nnUNet_raw'])    
     rrr = sorted(glob.glob(os.environ['nnUNet_raw']))
-    print("RAW !!", rrr)
 
     
     extract_fingerprints([dataset_id])
@@ -180,7 +178,6 @@ if __name__ == '__main__':
     list_gt_segmentations_datas = glob.glob(os.path.join(f"{nnunet_targets_preprocessed_dir}/gt_segmentations", '*'))
     list_gt_segmentations_datas.sort()
 
-    print(nnunet_targets_preprocessed_dir)
 
     for (preprocessed_path, gt_path) in zip(list_targets, list_gt_segmentations_datas):
         # here, gt_path is the path to the gt_segmentation in nnUNet_preprocessed.
@@ -195,7 +192,7 @@ if __name__ == '__main__':
 
     for (datas_path, targets_path) in zip(list_preprocessed_datas_seg_path, list_preprocessed_targets_path):
         print(targets_path, "->", datas_path)
-        shutil.copy(src = targets_path, dst = datas_path) '''
+        shutil.copy(src = targets_path, dst = datas_path)'''
 
 
 

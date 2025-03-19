@@ -1,1 +1,1 @@
-{"labels": {"label_001": "1", "background": 0}, "channel_names": {"0": "noNorm"}, "numTraining": 228, "file_ending": ".npy"}
+{"labels": {"label_001": "1", "background": 0}, "channel_names": {"0": "rescale_to_0_1"}, "numTraining": 228, "file_ending": ".npy"}

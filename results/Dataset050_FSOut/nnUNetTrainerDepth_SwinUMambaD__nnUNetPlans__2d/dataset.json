@@ -4,7 +4,7 @@
         "background": 0
     },
     "channel_names": {
-        "0": "noNorm"
+        "0": "rescale_to_0_1"
     },
     "numTraining": 228,
     "file_ending": ".npy"
